@@ -147,6 +147,33 @@ class CassiniShapeCalculator:
         R_0 = self.params.r0 * (self.params.nucleons ** (1 / 3))
         return (4 / 3) * np.pi * R_0 ** 3
 
+    def fit_shape(self, rho: np.ndarray, z: np.ndarray) -> Tuple[callable, dict]:
+        """Fit a function to the nuclear shape coordinates.
+        
+        Args:
+            rho: Array of radial coordinates
+            z: Array of vertical coordinates
+            
+        Returns:
+            Tuple containing:
+            - The fitted function (callable)
+            - Dictionary of fit parameters and metrics
+        """
+        # Placeholder for shape fitting implementation
+        # This will be replaced with actual fitting logic
+        
+        def fitted_function(x):
+            """Placeholder fitted function."""
+            return np.zeros_like(x)
+            
+        fit_results = {
+            'parameters': {},
+            'r_squared': 0.0,
+            'rmse': 0.0
+        }
+        
+        return fitted_function, fit_results
+
 
 class CassiniShapePlotter:
     """Class for handling the plotting interface and user interaction."""
