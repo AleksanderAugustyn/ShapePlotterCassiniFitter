@@ -5,14 +5,14 @@ This version implements an object-oriented design for better organization and ma
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Tuple, Dict
-import scipy.special as sp
-from scipy.optimize import curve_fit
+from typing import Dict, List, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.special as sp
 from matplotlib.widgets import Button, Slider
+from scipy.optimize import curve_fit
 
 matplotlib.use('TkAgg')
 
@@ -162,39 +162,39 @@ class CassiniShapeCalculator:
             - Dictionary of fit parameters and metrics
         """
         # Convert cylindrical (rho,z) to spherical (r,theta) coordinates
-        r = np.sqrt(rho**2 + z**2)
-        theta = np.arccos(z/r)
-        
+        r = np.sqrt(rho ** 2 + z ** 2)
+        theta = np.arccos(z / r)
+
         def spherical_harmonics_sum(theta, *betas):
             """Sum of spherical harmonics with deformation parameters."""
             result = 1.0  # Start with spherical shape
             for l in range(2, 13, 2):  # Even l values up to 12
                 # Using only m=0 spherical harmonics (axially symmetric)
                 Y_l0 = sp.sph_harm(0, l, 0, theta)  # phi=0 for axial symmetry
-                result += betas[l//2 - 1] * Y_l0.real
+                result += betas[l // 2 - 1] * Y_l0.real
             return result
-        
+
         # Initial guess for beta parameters
         initial_betas = [0.0] * 6  # For l=2,4,6,8,10,12
-        
+
         try:
             # Fit the function to the shape
-            popt, pcov = curve_fit(spherical_harmonics_sum, theta, r/np.mean(r), 
-                                 p0=initial_betas)
-            
+            popt, pcov = curve_fit(spherical_harmonics_sum, theta, r / np.mean(r),
+                                   p0=initial_betas)
+
             # Calculate R-squared
             r_pred = np.mean(r) * spherical_harmonics_sum(theta, *popt)
             ss_res = np.sum((r - r_pred) ** 2)
             ss_tot = np.sum((r - np.mean(r)) ** 2)
             r_squared = 1 - (ss_res / ss_tot)
-            
+
             # Calculate RMSE
             rmse = np.sqrt(np.mean((r - r_pred) ** 2))
-            
+
             # Create the fitted function
             def fitted_function(theta_new):
                 return np.mean(r) * spherical_harmonics_sum(theta_new, *popt)
-            
+
             # Store results
             fit_results = {
                 'parameters': {f'beta_{l}': popt[i] for i, l in enumerate(range(2, 13, 2))},
@@ -202,19 +202,19 @@ class CassiniShapeCalculator:
                 'rmse': rmse,
                 'covariance': pcov
             }
-            
+
         except RuntimeError:
             # Fallback if fitting fails
             def fitted_function(theta_new):
                 return np.ones_like(theta_new) * np.mean(r)
-                
+
             fit_results = {
                 'parameters': {f'beta_{l}': 0.0 for l in range(2, 13, 2)},
                 'r_squared': 0.0,
                 'rmse': float('inf'),
                 'covariance': None
             }
-        
+
         return fitted_function, fit_results
 
 
