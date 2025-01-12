@@ -506,6 +506,22 @@ class CassiniShapePlotter:
         sphere_y = R_0 * np.sin(theta)
         self.sphere_line.set_data(sphere_x, sphere_y)
 
+        # Fit the shape using spherical harmonics
+        r = np.sqrt(rho**2 + z**2)
+        theta = np.arccos(z / r)
+        fitted_func, fit_results = calculator.fit_shape(rho, z)
+        
+        # Generate points for fitted shape
+        theta_fit = np.linspace(0, np.pi, 200)
+        r_fit = fitted_func(theta_fit)
+        x_fit = r_fit * np.cos(theta_fit)
+        y_fit = r_fit * np.sin(theta_fit)
+        
+        # Plot fitted shape if it exists
+        if hasattr(self, 'fit_line'):
+            self.fit_line.remove()
+        self.fit_line, = self.ax_plot.plot(x_fit, y_fit, '--r', label='Fitted Shape', alpha=0.7)
+
         # Update plot limits
         max_val = max(np.max(np.abs(z)), np.max(np.abs(rho))) * 1.2
         self.ax_plot.set_xlim(-max_val, max_val)
