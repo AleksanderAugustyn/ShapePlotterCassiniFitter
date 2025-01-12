@@ -236,6 +236,7 @@ class CassiniShapePlotter:
         self.line = None
         self.line_mirror = None
         self.sphere_line = None
+        self.fit_line = None
         self.slider_z = None
         self.slider_n = None
         self.btn_z_increase = None
@@ -528,7 +529,10 @@ class CassiniShapePlotter:
             f"Z_bar center of mass: {z_cm_bar:.4f} fm\n"
             f"Z center of mass: {z_cm:.2f} fm\n"
             f"Max X length: {total_length:.4f} fm\n"
-            f"Max Y length: {total_width:.4f} fm"
+            f"Max Y length: {total_width:.4f} fm\n\n"
+            f"Fit Results:\n"
+            + "\n".join(f"β_{k} = {v:.4f}" for k, v in fit_results['parameters'].items())
+            + f"\nR² = {fit_results['r_squared']:.4f}"
         )
 
         # Remove old text if it exists
