@@ -165,13 +165,13 @@ class CassiniShapeCalculator:
         r = np.sqrt(rho ** 2 + z ** 2)
         theta = np.arccos(z / r)
 
-        def spherical_harmonics_sum(theta, *betas):
+        def spherical_harmonics_sum(theta_fit, *betas):
             """Sum of spherical harmonics with deformation parameters."""
             result = 1.0  # Start with spherical shape
-            for l in range(2, 13, 2):  # Even l values up to 12
+            for harmonic_counter in range(2, 13, 2):  # Even l values up to 12
                 # Using only m=0 spherical harmonics (axially symmetric)
-                Y_l0 = sp.sph_harm(0, l, 0, theta)  # phi=0 for axial symmetry
-                result += betas[l // 2 - 1] * Y_l0.real
+                Y_l0 = sp.sph_harm(0, harmonic_counter, 0, theta_fit)  # phi=0 for axial symmetry
+                result += betas[harmonic_counter // 2 - 1] * Y_l0.real
             return result
 
         # Initial guess for beta parameters
@@ -193,6 +193,7 @@ class CassiniShapeCalculator:
 
             # Create the fitted function
             def fitted_function(theta_new):
+                """Fitted function using spherical harmonics."""
                 return np.mean(r) * spherical_harmonics_sum(theta_new, *popt)
 
             # Store results
@@ -206,10 +207,11 @@ class CassiniShapeCalculator:
         except RuntimeError:
             # Fallback if fitting fails
             def fitted_function(theta_new):
+                """Fitted function using spherical harmonics."""
                 return np.ones_like(theta_new) * np.mean(r)
 
             fit_results = {
-                'parameters': {f'beta_{l}': 0.0 for l in range(2, 13, 2)},
+                'parameters': {f'beta_{beta_counter}': 0.0 for beta_counter in range(2, 13, 2)},
                 'r_squared': 0.0,
                 'rmse': float('inf'),
                 'covariance': None
@@ -518,8 +520,8 @@ class CassiniShapePlotter:
         y_fit = r_fit * np.sin(theta_fit)
         
         # Plot fitted shape if it exists
-        if hasattr(self, 'fit_line'):
-            self.fit_line.remove()
+        # if hasattr(self, 'fit_line'):
+        # self.fit_line.set_data(x_fit, y_fit)
         self.fit_line, = self.ax_plot.plot(x_fit, y_fit, '--r', label='Fitted Shape', alpha=0.7)
 
         # Update plot limits
