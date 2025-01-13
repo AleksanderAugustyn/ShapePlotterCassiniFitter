@@ -305,6 +305,9 @@ class CassiniShapePlotter:
         self.line_mirror, = self.ax_plot.plot(z, -rho)
         self.sphere_line, = self.ax_plot.plot(sphere_x, sphere_y, '--', color='gray', alpha=0.5, label='R₀')
 
+        # Initialize fit_line as empty line
+        self.fit_line, = self.ax_plot.plot([], [], '--r', label='Fitted Shape', alpha=0.7)
+
     def setup_controls(self):
         """Set up all UI controls."""
         # Create proton (Z) controls
@@ -509,20 +512,18 @@ class CassiniShapePlotter:
         self.sphere_line.set_data(sphere_x, sphere_y)
 
         # Fit the shape using spherical harmonics
-        r = np.sqrt(rho**2 + z**2)
+        r = np.sqrt(rho ** 2 + z ** 2)
         theta = np.arccos(z / r)
         fitted_func, fit_results = calculator.fit_shape(rho, z)
-        
+
         # Generate points for fitted shape
         theta_fit = np.linspace(0, np.pi, 200)
         r_fit = fitted_func(theta_fit)
         x_fit = r_fit * np.cos(theta_fit)
         y_fit = r_fit * np.sin(theta_fit)
-        
-        # Plot fitted shape if it exists
-        # if hasattr(self, 'fit_line'):
-        # self.fit_line.set_data(x_fit, y_fit)
-        self.fit_line, = self.ax_plot.plot(x_fit, y_fit, '--r', label='Fitted Shape', alpha=0.7)
+
+        # Update fitted shape line
+        self.fit_line.set_data(x_fit, y_fit)
 
         # Update plot limits
         max_val = max(np.max(np.abs(z)), np.max(np.abs(rho))) * 1.2
