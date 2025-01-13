@@ -168,14 +168,14 @@ class CassiniShapeCalculator:
         def spherical_harmonics_sum(theta_fit, *betas):
             """Sum of spherical harmonics with deformation parameters."""
             result = 1.0  # Start with spherical shape
-            for harmonic_counter in range(2, 13, 2):  # Even l values up to 12
+            for l in range(1, 13):  # All l values from 1 to 12
                 # Using only m=0 spherical harmonics (axially symmetric)
-                Y_l0 = sp.sph_harm(0, harmonic_counter, 0, theta_fit)  # phi=0 for axial symmetry
-                result += betas[harmonic_counter // 2 - 1] * Y_l0.real
+                Y_l0 = sp.sph_harm(0, l, 0, theta_fit)  # phi=0 for axial symmetry
+                result += betas[l-1] * Y_l0.real
             return result
 
         # Initial guess for beta parameters
-        initial_betas = [0.0] * 6  # For l=2,4,6,8,10,12
+        initial_betas = [0.0] * 12  # For l=1,2,3,4,5,6,7,8,9,10,11,12
 
         try:
             # Fit the function to the shape
@@ -211,7 +211,7 @@ class CassiniShapeCalculator:
                 return np.ones_like(theta_new) * np.mean(r)
 
             fit_results = {
-                'parameters': {f'beta_{beta_counter}': 0.0 for beta_counter in range(2, 13, 2)},
+                'parameters': {f'beta_{beta_counter}': 0.0 for beta_counter in range(1, 13)},
                 'r_squared': 0.0,
                 'rmse': float('inf'),
                 'covariance': None
