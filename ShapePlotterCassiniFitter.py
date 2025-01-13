@@ -198,7 +198,7 @@ class CassiniShapeCalculator:
 
             # Store results
             fit_results = {
-                'parameters': {f'beta_{l}': popt[i] for i, l in enumerate(range(2, 13, 2))},
+                'parameters': {f'beta_{l}': popt[i] for i, l in enumerate(range(1, 13))},
                 'r_squared': r_squared,
                 'rmse': rmse,
                 'covariance': pcov
@@ -558,9 +558,11 @@ class CassiniShapePlotter:
         for artist in self.ax_plot.texts:
             artist.remove()
 
-        # Add new text
-        self.ax_plot.text(1.1 * max_val, 0.5 * max_val, info_text,
-                          fontsize=24, verticalalignment='center')
+        # Add new text at fixed position on the left
+        bbox = dict(facecolor='white', alpha=0.8, edgecolor='none')
+        self.ax_plot.text(-2.2 * max_val, 0, info_text,
+                          fontsize=12, verticalalignment='center',
+                          bbox=bbox)
 
         # Update title with current nuclear information
         self.ax_plot.set_title(f'Nuclear Shape (Z={current_params.protons}, N={current_params.neutrons}, A={current_params.nucleons})',
