@@ -560,7 +560,7 @@ class CassiniShapePlotter:
 
         # Add new text at fixed position on the left
         bbox = dict(facecolor='white', alpha=0.8, edgecolor='none')
-        self.ax_plot.text(-2.2 * max_val, 0, info_text,
+        self.ax_plot.text(12.0, 2.5, info_text,
                           fontsize=12, verticalalignment='center',
                           bbox=bbox)
 
