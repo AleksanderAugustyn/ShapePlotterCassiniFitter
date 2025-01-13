@@ -272,7 +272,7 @@ class CassiniShapePlotter:
         self.fig = plt.figure(figsize=(12, 8))
         self.ax_plot = self.fig.add_subplot(111)
 
-        plt.subplots_adjust(left=0.1, bottom=0.35, right=0.9, top=0.9)
+        plt.subplots_adjust(left=0.1, bottom=0.35, right=0.7, top=0.9)  # Reduced right margin to make room for text
 
         # Set up the main plot
         self.ax_plot.set_aspect('equal')
@@ -558,10 +558,14 @@ class CassiniShapePlotter:
         for artist in self.ax_plot.texts:
             artist.remove()
 
-        # Add new text at fixed position on the left
+        # Add new text at fixed position on the right
         bbox = dict(facecolor='white', alpha=0.8, edgecolor='none')
-        self.ax_plot.text(12.0, 1.2, info_text,
-                          fontsize=22, verticalalignment='center',
+        text_x = max_val + 0.2  # Fixed offset from the right edge of the plot
+        text_y = 0  # Center vertically
+        self.ax_plot.text(text_x, text_y, info_text,
+                          fontsize=12, verticalalignment='center',
+                          horizontalalignment='left',
+                          transform=self.ax_plot.transData,
                           bbox=bbox)
 
         # Update title with current nuclear information
