@@ -560,8 +560,8 @@ class CassiniShapePlotter:
 
         # Add new text at fixed position on the left
         bbox = dict(facecolor='white', alpha=0.8, edgecolor='none')
-        self.ax_plot.text(12.0, 2.5, info_text,
-                          fontsize=12, verticalalignment='center',
+        self.ax_plot.text(12.0, 1.2, info_text,
+                          fontsize=22, verticalalignment='center',
                           bbox=bbox)
 
         # Update title with current nuclear information
