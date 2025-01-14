@@ -80,6 +80,27 @@ class CassiniToBetaConverter:
 
         return beta_values
 
+    @staticmethod
+    def _calculate_epsilon(alpha: float, alpha_params: List[float]) -> float:
+        """Calculate epsilon parameter from alpha and alpha parameters."""
+        # Implementation of equation (6) from the paper
+        sum_all = sum(alpha_params)
+        sum_alternating = sum((-1) ** n * val for n, val in enumerate(alpha_params, 1))
+
+        sum_factorial = 0
+        for n in range(1, 3):
+            idx = 2 * n - 1
+            if idx < len(alpha_params):
+                val = alpha_params[idx]
+                sum_factorial += ((-1) ** n * val *
+                                  double_factorial(2 * n - 1) /
+                                  (2 ** n * math.factorial(n)))
+
+        epsilon = ((alpha - 1) / 4 * ((1 + sum_all) ** 2 + (1 + sum_alternating) ** 2) +
+                   (alpha + 1) / 2 * (1 + sum_factorial) ** 2)
+
+        return epsilon
+
 
 @dataclass
 class CassiniParameters:
@@ -114,15 +135,18 @@ class CassiniShapeCalculator:
     def __init__(self, params: CassiniParameters):
         self.params = params
 
-    def calculate_epsilon(self, alpha: float, alpha_params: List[float]) -> float:
+    def calculate_epsilon(self) -> float:
         """Calculate epsilon parameter from alpha and alpha parameters."""
-        # Implementation of equation (6) from the paper
+        alpha = self.params.alpha
+        alpha_params = self.params.alpha_params
+
         sum_all = sum(alpha_params)
         sum_alternating = sum((-1) ** n * val for n, val in enumerate(alpha_params, 1))
 
+        # Calculate factorial sum term
         sum_factorial = 0
-        for n in range(1, 3):
-            idx = 2 * n - 1
+        for n in range(1, 3):  # For α₂ and α₄
+            idx = 2 * n - 1  # Convert to 0-based index
             if idx < len(alpha_params):
                 val = alpha_params[idx]
                 sum_factorial += ((-1) ** n * val *
@@ -137,7 +161,7 @@ class CassiniShapeCalculator:
     def calculate_coordinates(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Calculate cylindrical coordinates using Cassini oval parametrization."""
         R_0 = self.params.r0 * (self.params.nucleons ** (1 / 3))
-        epsilon = self.calculate_epsilon(self.params.alpha, self.params.alpha_params)
+        epsilon = self.calculate_epsilon()
         s = epsilon * R_0 ** 2
 
         # Calculate R(x) using Legendre polynomials
