@@ -11,6 +11,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import Button, Slider
+from scipy.special import sph_harm
 
 matplotlib.use('TkAgg')
 
@@ -18,6 +19,66 @@ matplotlib.use('TkAgg')
 def double_factorial(n):
     """Calculate double factorial n!!"""
     return math.prod(range(n, 0, -2))
+
+
+class CassiniToBetaConverter:
+    """Class for converting between Cassini and beta parameterizations."""
+
+    def __init__(self, num_points: int = 1000):
+        """Initialize converter with integration grid size."""
+        self.num_points = num_points
+        self.theta = np.linspace(0, np.pi, num_points)
+        self.phi = np.array([0])  # For axial symmetry, we only need φ=0
+        self.r0 = 1.16  # Nuclear radius constant in fm
+
+    def calculate_radius_vector(self, Z: int, N: int, alpha: float,
+                                alpha_params: List[float], theta: np.ndarray) -> np.ndarray:
+        """Calculate R'(θ,φ) for given nuclear parameters."""
+        # Convert theta to x for Cassini parameterization
+        x = np.cos(theta)
+
+        # Calculate shape using existing CassiniShapeCalculator methods
+        R_0 = self.r0 * ((Z + N) ** (1 / 3))
+        epsilon = self._calculate_epsilon(alpha, alpha_params)
+        s = epsilon * R_0 ** 2
+
+        # Calculate R(x) using Legendre polynomials
+        R = R_0 * (1 + sum(alpha_n * np.polynomial.legendre.Legendre.basis(n + 1)(x)
+                           for n, alpha_n in enumerate(alpha_params)))
+
+        # Calculate shape coordinates
+        p2 = R ** 4 + 2 * s * R ** 2 * (2 * x ** 2 - 1) + s ** 2
+        p = np.sqrt(p2)
+        rho = np.sqrt(np.maximum(0, p - R ** 2 * (2 * x ** 2 - 1) - s)) / np.sqrt(2)
+        z = np.sign(x) * np.sqrt(np.maximum(0, p + R ** 2 * (2 * x ** 2 - 1) + s)) / np.sqrt(2)
+
+        # Convert to spherical coordinates
+        r = np.sqrt(rho ** 2 + z ** 2)
+        return r
+
+    def calculate_beta_params(self, Z: int, N: int, alpha: float,
+                              alpha_params: List[float]) -> List[float]:
+        """Calculate beta parameters using spherical harmonics integration."""
+        R_prime = self.calculate_radius_vector(Z, N, alpha, alpha_params, self.theta)
+
+        # Calculate beta parameters for λ=1 to 11
+        beta_values = []
+        for lambda_val in range(1, 12):
+            # Calculate spherical harmonic Y_λ0
+            Y_l0 = sph_harm(0, lambda_val, self.phi, self.theta)
+
+            # Calculate numerator integral
+            numerator = np.sum(R_prime * Y_l0.real * np.sin(self.theta)) * np.pi / self.num_points
+
+            # Calculate denominator integral (with Y_00)
+            Y_00 = sph_harm(0, 0, self.phi, self.theta)
+            denominator = np.sum(R_prime * Y_00.real * np.sin(self.theta)) * np.pi / self.num_points
+
+            # Calculate beta parameter using eq. (8) from paper
+            beta = 4 * np.pi * numerator / denominator
+            beta_values.append(float(beta))
+
+        return beta_values
 
 
 @dataclass
@@ -53,18 +114,15 @@ class CassiniShapeCalculator:
     def __init__(self, params: CassiniParameters):
         self.params = params
 
-    def calculate_epsilon(self) -> float:
+    def calculate_epsilon(self, alpha: float, alpha_params: List[float]) -> float:
         """Calculate epsilon parameter from alpha and alpha parameters."""
-        alpha = self.params.alpha
-        alpha_params = self.params.alpha_params
-
+        # Implementation of equation (6) from the paper
         sum_all = sum(alpha_params)
         sum_alternating = sum((-1) ** n * val for n, val in enumerate(alpha_params, 1))
 
-        # Calculate factorial sum term
         sum_factorial = 0
-        for n in range(1, 3):  # For α₂ and α₄
-            idx = 2 * n - 1  # Convert to 0-based index
+        for n in range(1, 3):
+            idx = 2 * n - 1
             if idx < len(alpha_params):
                 val = alpha_params[idx]
                 sum_factorial += ((-1) ** n * val *
@@ -79,7 +137,7 @@ class CassiniShapeCalculator:
     def calculate_coordinates(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Calculate cylindrical coordinates using Cassini oval parametrization."""
         R_0 = self.params.r0 * (self.params.nucleons ** (1 / 3))
-        epsilon = self.calculate_epsilon()
+        epsilon = self.calculate_epsilon(self.params.alpha, self.params.alpha_params)
         s = epsilon * R_0 ** 2
 
         # Calculate R(x) using Legendre polynomials
