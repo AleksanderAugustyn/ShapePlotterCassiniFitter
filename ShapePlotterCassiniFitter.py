@@ -61,9 +61,9 @@ class CassiniToBetaConverter:
         """Calculate beta parameters using spherical harmonics integration."""
         R_prime = self.calculate_radius_vector(Z, N, alpha, alpha_params, self.theta)
 
-        # Calculate beta parameters for λ=1 to 11
+        # Calculate beta parameters for λ=1 to 12
         beta_values = []
-        for lambda_val in range(1, 12):
+        for lambda_val in range(1, 13):
             # Calculate spherical harmonic Y_λ0
             Y_l0 = sph_harm(0, lambda_val, self.phi, self.theta)
 
@@ -77,6 +77,12 @@ class CassiniToBetaConverter:
             # Calculate beta parameter using eq. (8) from paper
             beta = 4 * np.pi * numerator / denominator
             beta_values.append(float(beta))
+
+        # Round to 4 decimal places and to zero if very close to zero
+        beta_values = [round(val, 4) if abs(val) > 1e-10 else 0.0 for val in beta_values]
+
+        print(f"Beta parameters for Z={Z}, N={N}, α={alpha}, α_params={alpha_params}:")
+        print(beta_values)
 
         return beta_values
 
@@ -544,6 +550,11 @@ class CassiniShapePlotter:
         max_y = np.max(np.abs(rho))  # Maximum in y-direction (rho-coordinate)
         total_length = 2 * max_x  # Full length in x-direction
         total_width = 2 * max_y  # Full width in y-direction
+
+        # Calculate the beta parameters
+        converter = CassiniToBetaConverter()
+        beta_params = converter.calculate_beta_params(current_params.protons, current_params.neutrons,
+                                                      current_params.alpha, current_params.alpha_params)
 
         # Add volume, center of mass, and dimension information
         info_text = (
