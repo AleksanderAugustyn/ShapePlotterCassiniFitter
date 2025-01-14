@@ -5,7 +5,7 @@ This version implements an object-oriented design for better organization and ma
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -487,6 +487,20 @@ class CassiniShapePlotter:
         self.fig.savefig(filename)
         print(f"Plot saved as {filename}")
 
+    def calculate_r_from_betas(self, theta: np.ndarray, beta_params: List[float]) -> np.ndarray:
+        """Calculate radius vector R(θ) from beta parameters."""
+        R_0 = self.nuclear_params.r0 * (self.nuclear_params.nucleons ** (1 / 3))
+        
+        # Sum over λ from 1 to len(beta_params)
+        r = np.ones_like(theta)
+        for lambda_val, beta in enumerate(beta_params, start=1):
+            # Calculate Y_λ0(θ,0) = normalization * P_λ(cos θ)
+            norm = np.sqrt((2 * lambda_val + 1) / (4 * np.pi))
+            legendre = np.polynomial.legendre.Legendre.basis(lambda_val)(np.cos(theta))
+            r += beta * norm * legendre
+            
+        return R_0 * r
+
     def update_plot(self, _):
         """Update the plot with new parameters."""
         # Get current parameters
@@ -525,11 +539,31 @@ class CassiniShapePlotter:
         # Recalculate center of mass
         z_cm = calculator.calculate_zcm(rho, z)
 
-        # Update plot for both scaled and unscaled shapes
+        # Calculate beta parameters
+        converter = CassiniToBetaConverter()
+        beta_params = converter.calculate_beta_params(current_params.protons, current_params.neutrons,
+                                                    current_params.alpha, current_params.alpha_params)
+
+        # Calculate shape from beta parameters
+        theta = np.linspace(0, np.pi, 1000)
+        r_beta = self.calculate_r_from_betas(theta, beta_params)
+        z_beta = r_beta * np.cos(theta)
+        rho_beta = r_beta * np.sin(theta)
+
+        # Update plot for both shapes
         self.line.set_data(z, rho)
         self.line_mirror.set_data(z, -rho)
         self.line_unscaled.set_data(z_bar, rho_bar)
         self.line_unscaled_mirror.set_data(z_bar, -rho_bar)
+        
+        # Plot beta-parameterized shape
+        if not hasattr(self, 'line_beta'):
+            self.line_beta, = self.ax_plot.plot(z_beta, rho_beta, 'g--', label='Beta', alpha=0.7)
+            self.line_beta_mirror, = self.ax_plot.plot(z_beta, -rho_beta, 'g--', alpha=0.7)
+            self.ax_plot.legend()
+        else:
+            self.line_beta.set_data(z_beta, rho_beta)
+            self.line_beta_mirror.set_data(z_beta, -rho_beta)
         self.point_zcm.set_data([z_cm], [0])
         self.point_zcm_bar.set_data([z_cm_bar], [0])
 
