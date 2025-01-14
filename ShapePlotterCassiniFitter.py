@@ -5,7 +5,7 @@ This version implements an object-oriented design for better organization and ma
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -242,6 +242,8 @@ class CassiniShapePlotter:
     def __init__(self):
         """Initialize the plotter with default settings."""
         # Define all instance attributes
+        self.line_beta_mirror = None
+        self.line_beta = None
         self.initial_z = 92  # Uranium
         self.initial_n = 144
         self.initial_alpha = 0.0
@@ -490,7 +492,7 @@ class CassiniShapePlotter:
     def calculate_r_from_betas(self, theta: np.ndarray, beta_params: List[float]) -> np.ndarray:
         """Calculate radius vector R(θ) from beta parameters."""
         R_0 = self.nuclear_params.r0 * (self.nuclear_params.nucleons ** (1 / 3))
-        
+
         # Sum over λ from 1 to len(beta_params)
         r = np.ones_like(theta)
         for lambda_val, beta in enumerate(beta_params, start=1):
@@ -498,7 +500,7 @@ class CassiniShapePlotter:
             norm = np.sqrt((2 * lambda_val + 1) / (4 * np.pi))
             legendre = np.polynomial.legendre.Legendre.basis(lambda_val)(np.cos(theta))
             r += beta * norm * legendre
-            
+
         return R_0 * r
 
     def update_plot(self, _):
@@ -542,7 +544,7 @@ class CassiniShapePlotter:
         # Calculate beta parameters
         converter = CassiniToBetaConverter()
         beta_params = converter.calculate_beta_params(current_params.protons, current_params.neutrons,
-                                                    current_params.alpha, current_params.alpha_params)
+                                                      current_params.alpha, current_params.alpha_params)
 
         # Calculate shape from beta parameters
         theta = np.linspace(0, np.pi, 1000)
@@ -555,7 +557,7 @@ class CassiniShapePlotter:
         self.line_mirror.set_data(z, -rho)
         self.line_unscaled.set_data(z_bar, rho_bar)
         self.line_unscaled_mirror.set_data(z_bar, -rho_bar)
-        
+
         # Plot beta-parameterized shape
         if not hasattr(self, 'line_beta'):
             self.line_beta, = self.ax_plot.plot(z_beta, rho_beta, 'g--', label='Beta', alpha=0.7)
@@ -602,7 +604,8 @@ class CassiniShapePlotter:
             f"Z_bar center of mass: {z_cm_bar:.4f} fm\n"
             f"Z center of mass: {z_cm:.2f} fm\n"
             f"Max X length: {total_length:.4f} fm\n"
-            f"Max Y length: {total_width:.4f} fm"
+            f"Max Y length: {total_width:.4f} fm\n"
+            f"For β parameters: {beta_params}"
         )
 
         # Remove old text if it exists
