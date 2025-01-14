@@ -326,6 +326,7 @@ class CassiniShapePlotter:
         sphere_x = R_0 * np.cos(theta)
         sphere_y = R_0 * np.sin(theta)
 
+        # Initialize all plot lines
         self.line, = self.ax_plot.plot(z, rho, 'b-', label='Scaled')
         self.line_mirror, = self.ax_plot.plot(z, -rho, 'b-')
         self.line_unscaled, = self.ax_plot.plot(z_bar, rho_bar, 'r--', label='Unscaled', alpha=0.5)
@@ -333,6 +334,21 @@ class CassiniShapePlotter:
         self.sphere_line, = self.ax_plot.plot(sphere_x, sphere_y, '--', color='gray', alpha=0.5, label='R₀')
         self.point_zcm, = self.ax_plot.plot(z_cm, 0, 'bo', label='z_cm', markersize=8)
         self.point_zcm_bar, = self.ax_plot.plot(z_cm_bar, 0, 'ro', label='z_cm_bar', markersize=8)
+
+        # Initialize beta lines
+        theta_beta = np.linspace(0, np.pi, 1000)
+        converter = CassiniToBetaConverter()
+        beta_params = converter.calculate_beta_params(self.nuclear_params.protons,
+                                                      self.nuclear_params.neutrons,
+                                                      self.nuclear_params.alpha,
+                                                      self.nuclear_params.alpha_params)
+        r_beta = self.calculate_r_from_betas(theta_beta, beta_params)
+        z_beta = r_beta * np.cos(theta_beta)
+        rho_beta = r_beta * np.sin(theta_beta)
+
+        self.line_beta, = self.ax_plot.plot(z_beta, rho_beta, 'g--', label='Beta', alpha=0.7)
+        self.line_beta_mirror, = self.ax_plot.plot(z_beta, -rho_beta, 'g--', alpha=0.7)
+
         self.ax_plot.legend()
 
     def setup_controls(self):
@@ -517,46 +533,45 @@ class CassiniShapePlotter:
         calculator = CassiniShapeCalculator(current_params)
         rho_bar, z_bar = calculator.calculate_coordinates(self.x_points)
 
-        # Calculate the volume of the shape before scaling, sphere volume and volume scaling factor
+        # Calculate volumes and scaling factors
         sphere_volume = calculator.calculate_sphere_volume()
         volume_pre_scale = calculator.integrate_volume(rho_bar, z_bar)
         volume_fixing_factor = sphere_volume / volume_pre_scale
-
-        # Calculate the radius scaling factor
         radius_scaling_factor = (volume_fixing_factor ** (1 / 3))
-
-        # Calculate c_male
         c_male = 1 / radius_scaling_factor
 
         # Calculate center of mass
         z_cm_bar = calculator.calculate_zcm(rho_bar, z_bar)
 
-        # Transform rho_bar and z_bar to rho and z
-        rho = rho_bar / c_male  # Scale the shape
-        z = (z_bar - z_cm_bar) / c_male  # Center the shape
+        # Transform coordinates
+        rho = rho_bar / c_male
+        z = (z_bar - z_cm_bar) / c_male
 
-        # Calculate post-scale volume using the same integration method
+        # Calculate post-scale volume and center of mass
         volume_post_scale = calculator.integrate_volume(rho, z)
-
-        # Recalculate center of mass
         z_cm = calculator.calculate_zcm(rho, z)
 
-        # Calculate beta parameters
+        # Calculate beta parameters and shape
         converter = CassiniToBetaConverter()
-        beta_params = converter.calculate_beta_params(current_params.protons, current_params.neutrons,
-                                                      current_params.alpha, current_params.alpha_params)
+        beta_params = converter.calculate_beta_params(current_params.protons,
+                                                      current_params.neutrons,
+                                                      current_params.alpha,
+                                                      current_params.alpha_params)
 
-        # Calculate shape from beta parameters
         theta = np.linspace(0, np.pi, 1000)
         r_beta = self.calculate_r_from_betas(theta, beta_params)
         z_beta = r_beta * np.cos(theta)
         rho_beta = r_beta * np.sin(theta)
 
-        # Update plot for both shapes
+        # Update all plot lines
         self.line.set_data(z, rho)
         self.line_mirror.set_data(z, -rho)
         self.line_unscaled.set_data(z_bar, rho_bar)
         self.line_unscaled_mirror.set_data(z_bar, -rho_bar)
+        self.line_beta.set_data(z_beta, rho_beta)
+        self.line_beta_mirror.set_data(z_beta, -rho_beta)
+        self.point_zcm.set_data([z_cm], [0])
+        self.point_zcm_bar.set_data([z_cm_bar], [0])
 
         # Plot beta-parameterized shape
         if not hasattr(self, 'line_beta'):
