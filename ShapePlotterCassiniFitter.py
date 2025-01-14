@@ -5,12 +5,13 @@ This version implements an object-oriented design for better organization and ma
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import Button, Slider
+from scipy import integrate
 from scipy.special import sph_harm
 
 matplotlib.use('TkAgg')
@@ -21,91 +22,43 @@ def double_factorial(n):
     return math.prod(range(n, 0, -2))
 
 
-class CassiniToBetaConverter:
-    """Class for converting between Cassini and beta parameterizations."""
+def calculate_radius_vector(rho: np.ndarray, z: np.ndarray) -> tuple[Any, Any]:
+    """Calculate the radius vector for given shape in cylindrical coordinates."""
+    r = np.sqrt(rho ** 2 + z ** 2)
+    theta = np.arccos(z / r)
 
-    def __init__(self, num_points: int = 1000):
-        """Initialize converter with integration grid size."""
-        self.num_points = num_points
-        self.theta = np.linspace(0, np.pi, num_points)
-        self.phi = np.array([0])  # For axial symmetry, we only need φ=0
-        self.r0 = 1.16  # Nuclear radius constant in fm
+    return r, theta
 
-    def calculate_radius_vector(self, Z: int, N: int, alpha: float,
-                                alpha_params: List[float], theta: np.ndarray) -> np.ndarray:
-        """Calculate R'(θ,φ) for given nuclear parameters."""
-        # Convert theta to x for Cassini parameterization
-        x = np.cos(theta)
 
-        # Calculate shape using existing CassiniShapeCalculator methods
-        R_0 = self.r0 * ((Z + N) ** (1 / 3))
-        epsilon = self._calculate_epsilon(alpha, alpha_params)
-        s = epsilon * R_0 ** 2
+def calculate_beta_parameters(rho: np.ndarray, z: np.ndarray, lambda_beta: int) -> float:
+    """Calculate the β parameters for given radius vector and angle."""
+    # Calculate radius vector and angle
+    r_beta, theta_beta = calculate_radius_vector(rho, z)
 
-        # Calculate R(x) using Legendre polynomials
-        R = R_0 * (1 + sum(alpha_n * np.polynomial.legendre.Legendre.basis(n + 1)(x)
-                           for n, alpha_n in enumerate(alpha_params)))
+    # Calculate Y_l0 for the given points
+    Y_lm = np.real(sph_harm(0, lambda_beta, 0, theta_beta))
 
-        # Calculate shape coordinates
-        p2 = R ** 4 + 2 * s * R ** 2 * (2 * x ** 2 - 1) + s ** 2
-        p = np.sqrt(p2)
-        rho = np.sqrt(np.maximum(0, p - R ** 2 * (2 * x ** 2 - 1) - s)) / np.sqrt(2)
-        z = np.sign(x) * np.sqrt(np.maximum(0, p + R ** 2 * (2 * x ** 2 - 1) + s)) / np.sqrt(2)
+    # Calculate Y_00 (constant for normalization)
+    Y_00 = np.real(sph_harm(0, 0, 0, theta_beta))
 
-        # Convert to spherical coordinates
-        r = np.sqrt(rho ** 2 + z ** 2)
-        return r
+    # Prepare integrand: R(θ,φ) * Y_lm * sin(θ)
+    integrand_num = r_beta * Y_lm * np.sin(theta_beta)
+    integrand_den = r_beta * Y_00 * np.sin(theta_beta)
 
-    def calculate_beta_params(self, Z: int, N: int, alpha: float,
-                              alpha_params: List[float]) -> List[float]:
-        """Calculate beta parameters using spherical harmonics integration."""
-        R_prime = self.calculate_radius_vector(Z, N, alpha, alpha_params, self.theta)
+    # Perform numerical integration over theta
+    numerator = integrate.trapezoid(integrand_num, theta_beta)
+    denominator = integrate.trapezoid(integrand_den, theta_beta)
 
-        # Calculate beta parameters for λ=1 to 12
-        beta_values = []
-        for lambda_val in range(1, 13):
-            # Calculate spherical harmonic Y_λ0
-            Y_l0 = sph_harm(0, lambda_val, self.phi, self.theta)
+    # Calculate the final coefficient using equation (8)
+    beta_lm = 4 * np.pi * numerator / denominator
 
-            # Calculate numerator integral
-            numerator = np.sum(R_prime * Y_l0.real * np.sin(self.theta)) * np.pi / self.num_points
+    # If beta_lm is close to zero, set it to zero
+    if np.isclose(beta_lm, 0):
+        beta_lm = 0
 
-            # Calculate denominator integral (with Y_00)
-            Y_00 = sph_harm(0, 0, self.phi, self.theta)
-            denominator = np.sum(R_prime * Y_00.real * np.sin(self.theta)) * np.pi / self.num_points
+    print(f"β_{lambda_beta} = {beta_lm:.4f}")
 
-            # Calculate beta parameter using eq. (8) from paper
-            beta = 4 * np.pi * numerator / denominator
-            beta_values.append(float(beta))
-
-        # Round to 4 decimal places and to zero if very close to zero
-        beta_values = [round(val, 4) if abs(val) > 1e-10 else 0.0 for val in beta_values]
-
-        print(f"Beta parameters for Z={Z}, N={N}, α={alpha}, α_params={alpha_params}:")
-        print(beta_values)
-
-        return beta_values
-
-    @staticmethod
-    def _calculate_epsilon(alpha: float, alpha_params: List[float]) -> float:
-        """Calculate epsilon parameter from alpha and alpha parameters."""
-        # Implementation of equation (6) from the paper
-        sum_all = sum(alpha_params)
-        sum_alternating = sum((-1) ** n * val for n, val in enumerate(alpha_params, 1))
-
-        sum_factorial = 0
-        for n in range(1, 3):
-            idx = 2 * n - 1
-            if idx < len(alpha_params):
-                val = alpha_params[idx]
-                sum_factorial += ((-1) ** n * val *
-                                  double_factorial(2 * n - 1) /
-                                  (2 ** n * math.factorial(n)))
-
-        epsilon = ((alpha - 1) / 4 * ((1 + sum_all) ** 2 + (1 + sum_alternating) ** 2) +
-                   (alpha + 1) / 2 * (1 + sum_factorial) ** 2)
-
-        return epsilon
+    return beta_lm
 
 
 @dataclass
@@ -242,8 +195,9 @@ class CassiniShapePlotter:
     def __init__(self):
         """Initialize the plotter with default settings."""
         # Define all instance attributes
-        self.line_beta_mirror = None
-        self.line_beta = None
+        self.line_polar = None
+        self.line_polar_mirror = None
+
         self.initial_z = 92  # Uranium
         self.initial_n = 144
         self.initial_alpha = 0.0
@@ -326,7 +280,6 @@ class CassiniShapePlotter:
         sphere_x = R_0 * np.cos(theta)
         sphere_y = R_0 * np.sin(theta)
 
-        # Initialize all plot lines
         self.line, = self.ax_plot.plot(z, rho, 'b-', label='Scaled')
         self.line_mirror, = self.ax_plot.plot(z, -rho, 'b-')
         self.line_unscaled, = self.ax_plot.plot(z_bar, rho_bar, 'r--', label='Unscaled', alpha=0.5)
@@ -334,21 +287,6 @@ class CassiniShapePlotter:
         self.sphere_line, = self.ax_plot.plot(sphere_x, sphere_y, '--', color='gray', alpha=0.5, label='R₀')
         self.point_zcm, = self.ax_plot.plot(z_cm, 0, 'bo', label='z_cm', markersize=8)
         self.point_zcm_bar, = self.ax_plot.plot(z_cm_bar, 0, 'ro', label='z_cm_bar', markersize=8)
-
-        # Initialize beta lines
-        theta_beta = np.linspace(0, np.pi, 1000)
-        converter = CassiniToBetaConverter()
-        beta_params = converter.calculate_beta_params(self.nuclear_params.protons,
-                                                      self.nuclear_params.neutrons,
-                                                      self.nuclear_params.alpha,
-                                                      self.nuclear_params.alpha_params)
-        r_beta = self.calculate_r_from_betas(theta_beta, beta_params)
-        z_beta = r_beta * np.cos(theta_beta)
-        rho_beta = r_beta * np.sin(theta_beta)
-
-        self.line_beta, = self.ax_plot.plot(z_beta, rho_beta, 'g--', label='Beta', alpha=0.7)
-        self.line_beta_mirror, = self.ax_plot.plot(z_beta, -rho_beta, 'g--', alpha=0.7)
-
         self.ax_plot.legend()
 
     def setup_controls(self):
@@ -505,20 +443,6 @@ class CassiniShapePlotter:
         self.fig.savefig(filename)
         print(f"Plot saved as {filename}")
 
-    def calculate_r_from_betas(self, theta: np.ndarray, beta_params: List[float]) -> np.ndarray:
-        """Calculate radius vector R(θ) from beta parameters."""
-        R_0 = self.nuclear_params.r0 * (self.nuclear_params.nucleons ** (1 / 3))
-
-        # Sum over λ from 1 to len(beta_params)
-        r = np.ones_like(theta)
-        for lambda_val, beta in enumerate(beta_params, start=1):
-            # Calculate Y_λ0(θ,0) = normalization * P_λ(cos θ)
-            norm = np.sqrt((2 * lambda_val + 1) / (4 * np.pi))
-            legendre = np.polynomial.legendre.Legendre.basis(lambda_val)(np.cos(theta))
-            r += beta * norm * legendre
-
-        return R_0 * r
-
     def update_plot(self, _):
         """Update the plot with new parameters."""
         # Get current parameters
@@ -529,58 +453,44 @@ class CassiniShapePlotter:
             alpha_params=[s.val for s in self.sliders]
         )
 
+        # Clear old polar plot if it exists
+        if self.line_polar is not None:
+            self.line_polar.remove()
+            self.line_polar_mirror.remove()
+
         # Calculate new shape
         calculator = CassiniShapeCalculator(current_params)
         rho_bar, z_bar = calculator.calculate_coordinates(self.x_points)
 
-        # Calculate volumes and scaling factors
+        # Calculate the volume of the shape before scaling, sphere volume and volume scaling factor
         sphere_volume = calculator.calculate_sphere_volume()
         volume_pre_scale = calculator.integrate_volume(rho_bar, z_bar)
         volume_fixing_factor = sphere_volume / volume_pre_scale
+
+        # Calculate the radius scaling factor
         radius_scaling_factor = (volume_fixing_factor ** (1 / 3))
+
+        # Calculate c_male
         c_male = 1 / radius_scaling_factor
 
         # Calculate center of mass
         z_cm_bar = calculator.calculate_zcm(rho_bar, z_bar)
 
-        # Transform coordinates
-        rho = rho_bar / c_male
-        z = (z_bar - z_cm_bar) / c_male
+        # Transform rho_bar and z_bar to rho and z
+        rho = rho_bar / c_male  # Scale the shape
+        z = (z_bar - z_cm_bar) / c_male  # Center the shape
 
-        # Calculate post-scale volume and center of mass
+        # Calculate post-scale volume using the same integration method
         volume_post_scale = calculator.integrate_volume(rho, z)
+
+        # Recalculate center of mass
         z_cm = calculator.calculate_zcm(rho, z)
 
-        # Calculate beta parameters and shape
-        converter = CassiniToBetaConverter()
-        beta_params = converter.calculate_beta_params(current_params.protons,
-                                                      current_params.neutrons,
-                                                      current_params.alpha,
-                                                      current_params.alpha_params)
-
-        theta = np.linspace(0, np.pi, 1000)
-        r_beta = self.calculate_r_from_betas(theta, beta_params)
-        z_beta = r_beta * np.cos(theta)
-        rho_beta = r_beta * np.sin(theta)
-
-        # Update all plot lines
+        # Update plot for both scaled and unscaled shapes
         self.line.set_data(z, rho)
         self.line_mirror.set_data(z, -rho)
         self.line_unscaled.set_data(z_bar, rho_bar)
         self.line_unscaled_mirror.set_data(z_bar, -rho_bar)
-        self.line_beta.set_data(z_beta, rho_beta)
-        self.line_beta_mirror.set_data(z_beta, -rho_beta)
-        self.point_zcm.set_data([z_cm], [0])
-        self.point_zcm_bar.set_data([z_cm_bar], [0])
-
-        # Plot beta-parameterized shape
-        if not hasattr(self, 'line_beta'):
-            self.line_beta, = self.ax_plot.plot(z_beta, rho_beta, 'g--', label='Beta', alpha=0.7)
-            self.line_beta_mirror, = self.ax_plot.plot(z_beta, -rho_beta, 'g--', alpha=0.7)
-            self.ax_plot.legend()
-        else:
-            self.line_beta.set_data(z_beta, rho_beta)
-            self.line_beta_mirror.set_data(z_beta, -rho_beta)
         self.point_zcm.set_data([z_cm], [0])
         self.point_zcm_bar.set_data([z_cm_bar], [0])
 
@@ -602,10 +512,18 @@ class CassiniShapePlotter:
         total_length = 2 * max_x  # Full length in x-direction
         total_width = 2 * max_y  # Full width in y-direction
 
-        # Calculate the beta parameters
-        converter = CassiniToBetaConverter()
-        beta_params = converter.calculate_beta_params(current_params.protons, current_params.neutrons,
-                                                      current_params.alpha, current_params.alpha_params)
+        # Calculate beta parameters for the shape
+        for lambda_beta in range(1, 13):
+            calculate_beta_parameters(rho, z, lambda_beta)
+
+        # Calculate r and theta coordinates
+        r, theta = calculate_radius_vector(rho, z)
+        x_polar = r * np.cos(theta)
+        y_polar = r * np.sin(theta)
+
+        # Update the plot with the new shape
+        self.line_polar, = self.ax_plot.plot(x_polar, y_polar, 'y', label='Polar', alpha=0.7)
+        self.line_polar_mirror, = self.ax_plot.plot(x_polar, -y_polar, 'y', alpha=0.7)
 
         # Add volume, center of mass, and dimension information
         info_text = (
@@ -619,8 +537,7 @@ class CassiniShapePlotter:
             f"Z_bar center of mass: {z_cm_bar:.4f} fm\n"
             f"Z center of mass: {z_cm:.2f} fm\n"
             f"Max X length: {total_length:.4f} fm\n"
-            f"Max Y length: {total_width:.4f} fm\n"
-            f"For β parameters: {beta_params}"
+            f"Max Y length: {total_width:.4f} fm"
         )
 
         # Remove old text if it exists
