@@ -1,47 +1,46 @@
 """
-Nuclear Shape Plotter using Cassini Ovals - A program to visualize and analyze nuclear shapes.
+Nuclear Shape Plotter - A program to visualize and analyze nuclear shapes using spherical harmonics.
 This version implements an object-oriented design for better organization and maintainability.
 """
 
-import math
+import warnings
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.special as sp
-from matplotlib.widgets import Button, Slider
-from scipy.optimize import curve_fit
+from matplotlib.widgets import Button, Slider, TextBox
+from numpy import ndarray
+from scipy import integrate
+from scipy.special import sph_harm
 
 matplotlib.use('TkAgg')
 
 
-def double_factorial(n):
-    """Calculate double factorial n!!"""
-    return math.prod(range(n, 0, -2))
-
-
 @dataclass
-class CassiniParameters:
-    """Class to store Cassini shape parameters."""
+class NuclearParameters:
+    """Class to store nuclear shape parameters."""
     protons: int
     neutrons: int
-    alpha: float = 0.0
-    alpha_params: List[float] = field(default_factory=lambda: [0.0] * 5)  # Now includes α₂
+    beta_values: List[float] = field(default_factory=lambda: [0.0] * 12)
     r0: float = 1.16  # Radius constant in fm
 
     def __post_init__(self):
-        """Validate parameters after initialization."""
-        if not isinstance(self.alpha_params, list):
-            raise TypeError("alpha_params must be a list")
+        """Validate and adjust beta_values after initialization."""
+        if not isinstance(self.beta_values, list):
+            raise TypeError("beta_values must be a list")
 
-        if len(self.alpha_params) != 5:  # Updated for 5 parameters
-            _original_length = len(self.alpha_params)
-            if len(self.alpha_params) < 5:
-                self.alpha_params.extend([0.0] * (5 - len(self.alpha_params)))
+        if len(self.beta_values) != 12:
+            original_length = len(self.beta_values)
+            if len(self.beta_values) < 12:
+                # Pad with zeros if list is too short
+                self.beta_values.extend([0.0] * (12 - len(self.beta_values)))
+                warnings.warn(f"beta_values list was too short (length {original_length}). Padded with zeros to length 12.")
             else:
-                self.alpha_params = self.alpha_params[:5]
+                # Truncate if list is too long
+                self.beta_values = self.beta_values[:12]
+                warnings.warn(f"beta_values list was too long (length {original_length}). Truncated to length 12.")
 
     @property
     def nucleons(self) -> int:
@@ -49,389 +48,338 @@ class CassiniParameters:
         return self.protons + self.neutrons
 
 
-class CassiniShapeCalculator:
-    """Class for performing Cassini shape calculations."""
+class NuclearShapeCalculator:
+    """Class for performing nuclear shape calculations."""
 
-    def __init__(self, params: CassiniParameters):
+    def __init__(self, params: NuclearParameters):
         self.params = params
 
-    def calculate_epsilon(self) -> float:
-        """Calculate epsilon parameter from alpha and alpha parameters."""
-        alpha = self.params.alpha
-        alpha_params = self.params.alpha_params
-
-        sum_all = sum(alpha_params)
-        sum_alternating = sum((-1) ** n * val for n, val in enumerate(alpha_params, 1))
-
-        # Calculate factorial sum term
-        sum_factorial = 0
-        for n in range(1, 3):  # For α₂ and α₄
-            idx = 2 * n - 1  # Convert to 0-based index
-            if idx < len(alpha_params):
-                val = alpha_params[idx]
-                sum_factorial += ((-1) ** n * val *
-                                  double_factorial(2 * n - 1) /
-                                  (2 ** n * math.factorial(n)))
-
-        epsilon = ((alpha - 1) / 4 * ((1 + sum_all) ** 2 + (1 + sum_alternating) ** 2) +
-                   (alpha + 1) / 2 * (1 + sum_factorial) ** 2)
-
-        return epsilon
-
-    def calculate_coordinates(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """Calculate cylindrical coordinates using Cassini oval parametrization."""
-        R_0 = self.params.r0 * (self.params.nucleons ** (1 / 3))
-        epsilon = self.calculate_epsilon()
-        s = epsilon * R_0 ** 2
-
-        # Calculate R(x) using Legendre polynomials
-        R = R_0 * (1 + sum(alpha_n * np.polynomial.legendre.Legendre.basis(n + 1)(x)
-                           for n, alpha_n in enumerate(self.params.alpha_params)))
-
-        # Calculate p(x)
-        p2 = R ** 4 + 2 * s * R ** 2 * (2 * x ** 2 - 1) + s ** 2
-        p = np.sqrt(p2)
-
-        # Calculate ρ and z
-        rho = np.sqrt(np.maximum(0, p - R ** 2 * (2 * x ** 2 - 1) - s)) / np.sqrt(2)
-        z = np.sign(x) * np.sqrt(np.maximum(0, p + R ** 2 * (2 * x ** 2 - 1) + s)) / np.sqrt(2)
-
-        return rho, z
-
-    @staticmethod
-    def calculate_zcm(rho: np.ndarray, z: np.ndarray) -> float:
-        """Calculate the z-coordinate of the center of mass for given shape coordinates.
-
-        Args:
-            rho: Array of radial coordinates
-            z: Array of vertical coordinates
-
-        Returns:
-            float: Z-coordinate of the center of mass
-        """
-        # Calculate differential elements
-        dz = np.diff(z)
-        rho_midpoints = (rho[1:] + rho[:-1]) / 2
-        z_midpoints = (z[1:] + z[:-1]) / 2
-
-        # Volume element dV = πρ²dz for constant density
-        volume_elements = rho_midpoints * rho_midpoints * dz
-
-        # Calculate center of mass
-        total_volume = np.sum(volume_elements)
-        z_cm = np.sum(volume_elements * z_midpoints) / total_volume
-
-        return z_cm
-
-    @staticmethod
-    def integrate_volume(rho: np.ndarray, z: np.ndarray) -> float:
-        """Calculate volume by numerically integrating the provided shape coordinates.
-
-        Args:
-            rho: Array of radial coordinates
-            z: Array of vertical coordinates
-
-        Returns:
-            float: Volume calculated by numerical integration
-        """
-        # Calculate differential elements
-        dz = np.diff(z)
-        rho_midpoints = (rho[1:] + rho[:-1]) / 2
-
-        # Volume element dV = πρ²dz
-        volume_elements = np.pi * rho_midpoints * rho_midpoints * dz
-        total_volume = np.abs(np.sum(volume_elements))
-
-        return total_volume
-
     def calculate_sphere_volume(self) -> float:
-        """Calculate the volume of a sphere with the same number of nucleons."""
-        R_0 = self.params.r0 * (self.params.nucleons ** (1 / 3))
-        return (4 / 3) * np.pi * R_0 ** 3
+        """Calculate the volume of a spherical nucleus."""
+        return 4 / 3 * np.pi * self.params.nucleons * self.params.r0 ** 3
 
-    def fit_shape(self, rho: np.ndarray, z: np.ndarray) -> Tuple[callable, Dict]:
-        """Fit nuclear shape using spherical harmonics up to l=12.
-        
-        Args:
-            rho: Array of radial coordinates
-            z: Array of vertical coordinates
-            
-        Returns:
-            Tuple containing:
-            - The fitted function (callable)
-            - Dictionary of fit parameters and metrics
-        """
-        # Convert cylindrical (rho,z) to spherical (r,theta) coordinates
-        r = np.sqrt(rho ** 2 + z ** 2)
-        theta = np.arccos(z / r)
+    def calculate_volume(self) -> float:
+        """Calculate the volume of a deformed nucleus using analytical formula."""
+        beta_params = tuple(self.params.beta_values)
+        nucleons = self.params.nucleons
+        r0 = self.params.r0
 
-        def spherical_harmonics_sum(theta_fit, *betas):
-            """Sum of spherical harmonics with deformation parameters."""
-            result = 1.0  # Start with spherical shape
-            for l in range(1, 13):  # All l values from 1 to 12
-                # Using only m=0 spherical harmonics (axially symmetric)
-                Y_l0 = sp.sph_harm(0, l, 0, theta_fit)  # phi=0 for axial symmetry
-                result += betas[l-1] * Y_l0.real
-            return result
+        beta10, beta20, beta30, beta40, beta50, beta60, beta70, beta80, beta90, beta100, beta110, beta120 = beta_params
 
-        # Initial guess for beta parameters
-        initial_betas = [0.0] * 12  # For l=1,2,3,4,5,6,7,8,9,10,11,12
+        volume = (nucleons * r0 ** 3 * (74207381348100 * np.pi ** 1.5 + 648269351730 * np.sqrt(21) * beta100 ** 3 + 5807534192460 * np.sqrt(
+            69) * beta10 * beta110 * beta120 + 8429951570040 * beta110 ** 2 * beta120 + 2724132411000 * beta120 ** 3 + 11131107202215 * np.sqrt(5) * beta10 ** 2 * beta20 + 6996695955678 * np.sqrt(
+            5) * beta110 ** 2 * beta20 + 6990550416850 * np.sqrt(5) * beta120 ** 2 * beta20 + 2650263619575 * np.sqrt(5) * beta20 ** 3 + 2197030131010 * np.sqrt(161) * beta110 * beta120 * beta30 + 4770474515235 * np.sqrt(
+            105) * beta10 * beta20 * beta30 + 7420738134810 * np.sqrt(
+            5) * beta20 * beta30 ** 2 + 11968032555765 * beta110 ** 2 * beta40 + 11932146401175 * beta120 ** 2 * beta40 + 23852372576175 * beta20 ** 2 * beta40 + 10601054478300 * np.sqrt(
+            21) * beta10 * beta30 * beta40 + 15178782548475 * beta30 ** 2 * beta40 + 7227991689750 * np.sqrt(5) * beta20 * beta40 ** 2 + 4503594822075 * beta40 ** 3 + 1395572678500 * np.sqrt(
+            253) * beta110 * beta120 * beta50 + 2409330563250 * np.sqrt(385) * beta20 * beta30 * beta50 + 8432656971375 * np.sqrt(33) * beta10 * beta40 * beta50 + 3335996164500 * np.sqrt(
+            77) * beta30 * beta40 * beta50 + 7135325129625 * np.sqrt(
+            5) * beta20 * beta50 ** 2 + 12843585233325 * beta40 * beta50 ** 2 + 2832191612250 * np.sqrt(13) * beta110 ** 2 * beta60 + 2813654593750 * np.sqrt(13) * beta120 ** 2 * beta60 + 6486659208750 * np.sqrt(
+            13) * beta30 ** 2 * beta60 + 5837993287875 * np.sqrt(65) * beta20 * beta40 * beta60 + 3891995525250 * np.sqrt(13) * beta40 ** 2 * beta60 + 2335197315150 * np.sqrt(429) * beta10 * beta50 * beta60 + 798726124350 * np.sqrt(
+            3289) * beta110 * beta50 * beta60 + 908132289225 * np.sqrt(1001) * beta30 * beta50 * beta60 + 3357800061000 * np.sqrt(13) * beta50 ** 2 * beta60 + 22843567156410 * beta120 * beta60 ** 2 + 7083431855955 * np.sqrt(
+            5) * beta20 * beta60 ** 2 + 12500173863450 * beta40 * beta60 ** 2 + 1044291885000 * np.sqrt(13) * beta60 ** 3 + 1042707290625 * np.sqrt(345) * beta110 * beta120 * beta70 + 2472247527750 * np.sqrt(
+            345) * beta110 * beta40 * beta70 + 4540661446125 * np.sqrt(105) * beta30 * beta40 * beta70 + 3560036439960 * np.sqrt(165) * beta120 * beta50 * beta70 + 8173190603025 * np.sqrt(
+            33) * beta20 * beta50 * beta70 + 2136781857000 * np.sqrt(165) * beta40 * beta50 * beta70 + 5993673108885 * np.sqrt(65) * beta10 * beta60 * beta70 + 383388539688 * np.sqrt(
+            4485) * beta110 * beta60 * beta70 + 769241468520 * np.sqrt(
+            1365) * beta30 * beta60 * beta70 + 506079913500 * np.sqrt(2145) * beta50 * beta60 * beta70 + 12690870642450 * beta120 * beta70 ** 2 + 7051380128100 * np.sqrt(
+            5) * beta20 * beta70 ** 2 + 12297741898050 * beta40 * beta70 ** 2 + 3012380437500 * np.sqrt(13) * beta60 * beta70 ** 2 + 2238344983875 * np.sqrt(17) * beta110 ** 2 * beta80 + 2211803343750 * np.sqrt(
+            17) * beta120 ** 2 * beta80 + 882945545625 * np.sqrt(2737) * beta110 * beta30 * beta80 + 11125113874875 * np.sqrt(17) * beta120 * beta40 * beta80 + 5609052374625 * np.sqrt(17) * beta40 ** 2 * beta80 + 395559604440 * np.sqrt(
+            4301) * beta110 * beta50 * beta80 + 1282069114200 * np.sqrt(1309) * beta30 * beta50 * beta80 + 3247346111625 * np.sqrt(17) * beta50 ** 2 * beta80 + 1714091619240 * np.sqrt(
+            221) * beta120 * beta60 * beta80 + 1410276025620 * np.sqrt(
+            1105) * beta20 * beta60 * beta80 + 1821887688600 * np.sqrt(221) * beta40 * beta60 * beta80 + 2741266198125 * np.sqrt(17) * beta60 ** 2 * beta80 + 5238168095160 * np.sqrt(85) * beta10 * beta70 * beta80 + 276891723108 * np.sqrt(
+            5865) * beta110 * beta70 * beta80 + 668025485820 * np.sqrt(1785) * beta30 * beta70 * beta80 + 433782783000 * np.sqrt(2805) * beta50 * beta70 * beta80 + 2521231453125 * np.sqrt(
+            17) * beta70 ** 2 * beta80 + 10415266251390 * beta120 * beta80 ** 2 + 7030172969820 * np.sqrt(5) * beta20 * beta80 ** 2 + 12167607063150 * beta40 * beta80 ** 2 + 2939035522500 * np.sqrt(
+            13) * beta60 * beta80 ** 2 + 800070781125 * np.sqrt(17) * beta80 ** 3 + 6111105 * beta100 ** 2 * (
+                                                1440600 * beta120 + 31 * (36975 * np.sqrt(5) * beta20 + 63423 * beta40 + 15080 * np.sqrt(13) * beta60 + 12005 * np.sqrt(17) * beta80)) + 849332484000 * np.sqrt(
+            437) * beta110 * beta120 * beta90 + 1000671618375 * np.sqrt(2185) * beta110 * beta20 * beta90 + 4002686473500 * np.sqrt(133) * beta120 * beta30 * beta90 + 1271441585700 * np.sqrt(
+            437) * beta110 * beta40 * beta90 + 1785512103375 * np.sqrt(209) * beta120 * beta50 * beta90 + 3188303455050 * np.sqrt(209) * beta40 * beta50 * beta90 + 285681936540 * np.sqrt(
+            5681) * beta110 * beta60 * beta90 + 1113375809700 * np.sqrt(1729) * beta30 * beta60 * beta90 + 506079913500 * np.sqrt(2717) * beta50 * beta60 * beta90 + 1241238758760 * np.sqrt(
+            285) * beta120 * beta70 * beta90 + 6203093796900 * np.sqrt(57) * beta20 * beta70 * beta90 + 1590536871000 * np.sqrt(285) * beta40 * beta70 * beta90 + 363057329250 * np.sqrt(
+            3705) * beta60 * beta70 * beta90 + 1550773449225 * np.sqrt(
+            969) * beta10 * beta80 * beta90 + 222786443880 * np.sqrt(7429) * beta110 * beta80 * beta90 + 590770837800 * np.sqrt(2261) * beta30 * beta80 * beta90 + 380345773500 * np.sqrt(
+            3553) * beta50 * beta80 * beta90 + 290445863400 * np.sqrt(
+            4845) * beta70 * beta80 * beta90 + 9387573945750 * beta120 * beta90 ** 2 + 7015403698875 * np.sqrt(5) * beta20 * beta90 ** 2 + 12078695064150 * beta40 * beta90 ** 2 + 2890627878600 * np.sqrt(
+            13) * beta60 * beta90 ** 2 + 2324911563975 * np.sqrt(17) * beta80 * beta90 ** 2 + 55655536011075 * np.sqrt(np.pi) * (beta10 ** 2 + beta100 ** 2 + beta110 ** 2 + beta120 ** 2 + beta20 ** 2 + beta30 ** 2 + beta40 ** 2 +
+                                                                                                                                 beta50 ** 2 + beta60 ** 2 + beta70 ** 2 + beta80 ** 2 + beta90 ** 2) + 2035 * beta100 * (
+                                                930397104 * np.sqrt(21) * beta110 ** 2 + 912234960 * np.sqrt(21) * beta120 ** 2 + 2242291194 * np.sqrt(105) * beta120 * beta20 + 2841109700 *
+                                                np.sqrt(21) * beta120 * beta40 + 2462010390 * np.sqrt(21) * beta50 ** 2 + 635359725 * np.sqrt(273) * beta120 * beta60 + 1367783550 * np.sqrt(273) * beta40 * beta60 + 1391571090 *
+                                                np.sqrt(21) * beta60 ** 2 + 10160677800 * np.sqrt(5) * beta30 * beta70 + 654157350 * np.sqrt(385) * beta50 * beta70 + 1156074444 * np.sqrt(21) * beta70 ** 2 + 491891400 *
+                                                np.sqrt(357) * beta120 * beta80 + 544322025 * np.sqrt(1785) * beta20 * beta80 + 694207800 * np.sqrt(357) * beta40 * beta80 + 156997764 * np.sqrt(4641) * beta60 * beta80 + 1051409268 *
+                                                np.sqrt(21) * beta80 ** 2 + 1822295475 * np.sqrt(57) * beta30 * beta90 + 166609872 * np.sqrt(4389) * beta50 * beta90 + 377957580 * np.sqrt(665) * beta70 * beta90 + 992760678 *
+                                                np.sqrt(21) * beta90 ** 2 + 8940555 * beta10 * (209 * np.sqrt(161) * beta110 + 230 * np.sqrt(133) * beta90) + 858 * beta110 * (
+                                                        1925658 * np.sqrt(69) * beta30 + 175305 * np.sqrt(5313) * beta50 + 394940 * np.sqrt(805) * beta70 + 108045 * np.sqrt(9177) * beta90)))) / (
+                         5.5655536011075e13 * np.sqrt(np.pi))
 
-        try:
-            # Fit the function to the shape
-            popt, pcov = curve_fit(spherical_harmonics_sum, theta, r / np.mean(r),
-                                   p0=initial_betas)
+        return volume
 
-            # Calculate R-squared
-            r_pred = np.mean(r) * spherical_harmonics_sum(theta, *popt)
-            ss_res = np.sum((r - r_pred) ** 2)
-            ss_tot = np.sum((r - np.mean(r)) ** 2)
-            r_squared = 1 - (ss_res / ss_tot)
+    def calculate_radius(self, theta: np.ndarray) -> np.ndarray:
+        """Calculate nuclear radius as a function of polar angle theta."""
+        radius = np.ones_like(theta)
 
-            # Calculate RMSE
-            rmse = np.sqrt(np.mean((r - r_pred) ** 2))
+        for harmonic_index in range(1, 13):
+            harmonic = np.real(sph_harm(0, harmonic_index, 0, theta))
+            radius += self.params.beta_values[harmonic_index - 1] * harmonic
 
-            # Create the fitted function
-            def fitted_function(theta_new):
-                """Fitted function using spherical harmonics."""
-                return np.mean(r) * spherical_harmonics_sum(theta_new, *popt)
+        volume_fix = self.calculate_volume_fixing_factor() ** (1 / 3)
+        return self.params.r0 * (self.params.nucleons ** (1 / 3)) * volume_fix * radius
 
-            # Store results
-            fit_results = {
-                'parameters': {f'beta_{l}': popt[i] for i, l in enumerate(range(1, 13))},
-                'r_squared': r_squared,
-                'rmse': rmse,
-                'covariance': pcov
-            }
+    def calculate_volume_fixing_factor(self) -> float:
+        """Calculate volume fixing factor to conserve volume."""
+        initial_volume = self.calculate_volume()
+        sphere_volume = self.calculate_sphere_volume()
+        return sphere_volume / initial_volume
 
-        except RuntimeError:
-            # Fallback if fitting fails
-            def fitted_function(theta_new):
-                """Fitted function using spherical harmonics."""
-                return np.ones_like(theta_new) * np.mean(r)
+    def calculate_volume_by_integration(self, n_theta: int = 200, n_phi: int = 200) -> float:
+        """Calculate nucleus volume by numerical integration."""
+        theta = np.linspace(0, np.pi, n_theta)
+        phi = np.linspace(0, 2 * np.pi, n_phi)
+        theta_mesh, phi_mesh = np.meshgrid(theta, phi)
 
-            fit_results = {
-                'parameters': {f'beta_{beta_counter}': 0.0 for beta_counter in range(1, 13)},
-                'r_squared': 0.0,
-                'rmse': float('inf'),
-                'covariance': None
-            }
+        r = self.calculate_radius(theta_mesh)
+        integrand = (r ** 3 * np.sin(theta_mesh)) / 3
 
-        return fitted_function, fit_results
+        return integrate.trapezoid(integrate.trapezoid(integrand, theta, axis=1), phi)
 
 
-class CassiniShapePlotter:
+class ShapeAnalyzer:
+    """Class for analyzing nuclear shapes and finding key measurements."""
+
+    def __init__(self, x_coords: np.ndarray, y_coords: np.ndarray, theta_vals: np.ndarray):
+        self.x_coords = x_coords
+        self.y_coords = y_coords
+        self.theta_vals = theta_vals
+
+    def find_neck_thickness(self, degree_range: Tuple[float, float]) -> tuple[float, ndarray[float, float], ndarray[float, float]]:
+        """Find neck thickness between specified degree range."""
+        start_rad, end_rad = np.radians(degree_range)
+        mask = (self.theta_vals >= start_rad) & (self.theta_vals <= end_rad)
+
+        relevant_x = self.x_coords[mask]
+        relevant_y = self.y_coords[mask]
+
+        distances = np.abs(relevant_y)
+        neck_idx = np.argmin(distances)
+        neck_thickness = distances[neck_idx] * 2
+
+        return neck_thickness, relevant_x[neck_idx], relevant_y[neck_idx]
+
+    @staticmethod
+    def find_nearest_point(plot_x: np.ndarray, plot_y: np.ndarray, angle: float) -> tuple[ndarray[float, float], ndarray[float, float]]:
+        """Find nearest point on curve to given angle."""
+        angles = np.arctan2(plot_y, plot_x)
+        angle_diff = np.abs(angles - angle)
+        nearest_index = np.argmin(angle_diff)
+        return plot_x[nearest_index], plot_y[nearest_index]
+
+
+class NuclearShapePlotter:
     """Class for handling the plotting interface and user interaction."""
 
     def __init__(self):
         """Initialize the plotter with default settings."""
-        # Define all instance attributes
-        self.initial_z = 92  # Uranium
-        self.initial_n = 144
-        self.initial_alpha = 0.0
-        self.initial_alphas = [0.0, 0.0, 0.0, 0.0, 0.0]  # α₁, α₂, α₃, α₄
-        self.x_points = np.linspace(-1, 1, 2000)
-
-        # UI elements
-        self.fig = None
-        self.ax_plot = None
-        self.line = None
-        self.line_mirror = None
-        self.sphere_line = None
-        self.fit_line = None
-        self.slider_z = None
-        self.slider_n = None
-        self.btn_z_increase = None
-        self.btn_z_decrease = None
-        self.btn_n_increase = None
-        self.btn_n_decrease = None
-        self.slider_alpha = None
-        self.btn_alpha_decrease = None
-        self.btn_alpha_increase = None
-        self.sliders = []
-        self.buttons = []  # Will store alpha parameter +/- buttons
+        self.root = None
+        self.submit_button = None
+        self.text_box = None
         self.reset_button = None
         self.save_button = None
-        self.config_buttons = []  # Store configuration buttons
-
-        # Initialize nuclear parameters
-        self.nuclear_params = CassiniParameters(
-            protons=self.initial_z,
-            neutrons=self.initial_n,
-            alpha=self.initial_alpha,
-            alpha_params=self.initial_alphas
-        )
-
-        # Set up the interface
+        self.slider_z = None
+        self.slider_n = None
+        self.btn_n_increase = None
+        self.btn_n_decrease = None
+        self.btn_z_increase = None
+        self.btn_z_decrease = None
+        self.volume_text = None
+        self.line = None
+        self.error_text = None
+        self.ax_text = None
+        self.ax_plot = None
+        self.fig = None
+        self.increase_buttons = None
+        self.decrease_buttons = None
+        self.sliders = None
+        self.nuclear_params = None
+        self.num_harmonics = 12
+        self.theta = np.linspace(0, 2 * np.pi, 2000)
+        self.initial_betas = [0.0] * self.num_harmonics
+        self.initial_z = 102
+        self.initial_n = 154
+        self.setup_initial_parameters()
         self.create_figure()
         self.setup_controls()
         self.setup_event_handlers()
 
+    def setup_initial_parameters(self):
+        """Initialize default parameters."""
+        self.num_harmonics = 12
+        self.initial_z = 102
+        self.initial_n = 154
+        self.initial_betas = [0.0] * self.num_harmonics
+        self.theta = np.linspace(0, 2 * np.pi, 2000)
+
+        self.nuclear_params = NuclearParameters(
+            protons=self.initial_z,
+            neutrons=self.initial_n,
+            beta_values=self.initial_betas
+        )
+
+        self.sliders = []
+        self.decrease_buttons = []
+        self.increase_buttons = []
+
     def create_figure(self):
         """Create and set up the matplotlib figure."""
-        self.fig = plt.figure(figsize=(12, 8))
-        self.ax_plot = self.fig.add_subplot(111)
+        self.fig = plt.figure(figsize=(15, 8))
+        self.ax_plot = self.fig.add_subplot(121)
+        self.ax_text = self.fig.add_subplot(122)
+        self.ax_text.axis('off')
 
-        plt.subplots_adjust(left=0.1, bottom=0.35, right=0.7, top=0.9)  # Reduced right margin to make room for text
+        plt.subplots_adjust(left=0.1, bottom=0.48, right=0.9, top=0.98)
+
+        # Add keyboard input instructions
+        self.ax_text.text(0.1, 0.25, 'Keyboard Input Format (works with Ctrl+V):\n'
+                                     'Z N β10 β20 β30 β40 β50 β60 β70 β80 β90 β100 β110 β120\n'
+                                     'Example: 102 154 0.0 0.5 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0',
+                          fontsize=12, verticalalignment='top')
+
+        # Add error message text (initially empty)
+        self.error_text = self.ax_text.text(0.1, 0.15, '', color='red', fontsize=12,
+                                            verticalalignment='top')
 
         # Set up the main plot
         self.ax_plot.set_aspect('equal')
         self.ax_plot.grid(True)
-        self.ax_plot.set_title('Nuclear Shape (Cassini Parametrization)', fontsize=14)
-        self.ax_plot.set_xlabel('X (fm)', fontsize=12)
-        self.ax_plot.set_ylabel('Y (fm)', fontsize=12)
+        self.ax_plot.set_title('Nuclear Shape with Volume Conservation', fontsize=18)
+        self.ax_plot.set_xlabel('X (fm)', fontsize=18)
+        self.ax_plot.set_ylabel('Y (fm)', fontsize=18)
 
         # Initialize the shape plot
-        calculator = CassiniShapeCalculator(self.nuclear_params)
-        rho_bar, z_bar = calculator.calculate_coordinates(self.x_points)
+        calculator = NuclearShapeCalculator(self.nuclear_params)
+        radius = calculator.calculate_radius(self.theta)
+        x = radius * np.sin(self.theta)
+        y = radius * np.cos(self.theta)
+        self.line, = self.ax_plot.plot(x, y)
 
-        # Calculate volume fixing factor
-        volume_fixing_factor = calculator.calculate_sphere_volume() / calculator.integrate_volume(rho_bar, z_bar)
-
-        # Calculate center of mass
-        z_cm_bar = calculator.calculate_zcm(rho_bar, z_bar)
-
-        # Transform rho_bar and z_bar to rho and z
-        rho = rho_bar / volume_fixing_factor  # Scale the shape
-        z = (z_bar - z_cm_bar) / volume_fixing_factor  # Center the shape
-
-        # Create reference sphere
-        R_0 = self.nuclear_params.r0 * (self.nuclear_params.nucleons ** (1 / 3))
-        theta = np.linspace(0, 2 * np.pi, 200)
-        sphere_x = R_0 * np.cos(theta)
-        sphere_y = R_0 * np.sin(theta)
-
-        self.line, = self.ax_plot.plot(z, rho)
-        self.line_mirror, = self.ax_plot.plot(z, -rho)
-        self.sphere_line, = self.ax_plot.plot(sphere_x, sphere_y, '--', color='gray', alpha=0.5, label='R₀')
-
-        # Initialize fit_line as empty line
-        self.fit_line, = self.ax_plot.plot([], [], '--r', label='Fitted Shape', alpha=0.7)
+        # Create a text box for volume information
+        self.volume_text = self.ax_text.text(0.1, 0.25, '', fontsize=24)
 
     def setup_controls(self):
         """Set up all UI controls."""
-        # Create proton (Z) controls
-        first_slider_y = 0.02
-        ax_z = plt.axes((0.25, first_slider_y, 0.5, 0.02))
-        ax_z_decrease = plt.axes((0.16, first_slider_y, 0.04, 0.02))
-        ax_z_increase = plt.axes((0.80, first_slider_y, 0.04, 0.02))
+        self.create_proton_neutron_controls()
+        self.create_beta_controls()
+        self.create_action_buttons()
+        self.create_text_input()
+
+    def create_proton_neutron_controls(self):
+        """Create controls for proton and neutron numbers."""
+        # Proton controls
+        ax_z = plt.axes((0.25, 0.00, 0.5, 0.02))
+        ax_z_decrease = plt.axes((0.16, 0.00, 0.04, 0.02))
+        ax_z_increase = plt.axes((0.80, 0.00, 0.04, 0.02))
 
         self.slider_z = Slider(ax=ax_z, label='Z', valmin=82, valmax=120,
                                valinit=self.initial_z, valstep=1)
         self.btn_z_decrease = Button(ax_z_decrease, '-')
         self.btn_z_increase = Button(ax_z_increase, '+')
 
-        # Create neutron (N) controls
-        ax_n = plt.axes((0.25, first_slider_y + 0.02, 0.5, 0.02))
-        ax_n_decrease = plt.axes((0.16, 0.04, 0.04, 0.02))
-        ax_n_increase = plt.axes((0.80, 0.04, 0.04, 0.02))
+        # Neutron controls
+        ax_n = plt.axes((0.25, 0.03, 0.5, 0.02))
+        ax_n_decrease = plt.axes((0.16, 0.03, 0.04, 0.02))
+        ax_n_increase = plt.axes((0.80, 0.03, 0.04, 0.02))
 
         self.slider_n = Slider(ax=ax_n, label='N', valmin=100, valmax=180,
                                valinit=self.initial_n, valstep=1)
         self.btn_n_decrease = Button(ax_n_decrease, '-')
         self.btn_n_increase = Button(ax_n_increase, '+')
 
-        # Create slider and buttons for main alpha parameter
-        ax_alpha = plt.axes((0.25, first_slider_y + 0.04, 0.5, 0.02))
-        ax_alpha_decrease = plt.axes((0.16, first_slider_y + 0.04, 0.04, 0.02))
-        ax_alpha_increase = plt.axes((0.80, first_slider_y + 0.04, 0.04, 0.02))
+        # Style settings
+        for slider in [self.slider_z, self.slider_n]:
+            slider.label.set_fontsize(18)
+            slider.valtext.set_fontsize(18)
 
-        self.slider_alpha = Slider(ax=ax_alpha, label='α',
-                                   valmin=0.0, valmax=1.05,
-                                   valinit=self.initial_alpha, valstep=0.025)
-        self.btn_alpha_decrease = Button(ax_alpha_decrease, '-')
-        self.btn_alpha_increase = Button(ax_alpha_increase, '+')
+    def create_beta_controls(self):
+        """Create controls for beta parameters."""
+        slider_height = 0.03
 
-        # Create sliders and buttons for alpha parameters with appropriate ranges
-        param_ranges = [
-            ('α₁', -1.0, 1.0),
-            ('α₂', -1.0, 1.0),
-            ('α₃', -1.0, 1.0),
-            ('α₄', -1.0, 1.0)
-        ]
+        for i in range(self.num_harmonics):
+            ax_decrease = plt.axes((0.16, 0.06 + i * slider_height, 0.04, 0.02))
+            ax_slider = plt.axes((0.25, 0.06 + i * slider_height, 0.5, 0.02))
+            ax_increase = plt.axes((0.80, 0.06 + i * slider_height, 0.04, 0.02))
 
-        for i, (label, min_val, max_val) in enumerate(param_ranges):
-            # Create slider
-            ax = plt.axes((0.25, first_slider_y + 0.06 + i * 0.02, 0.5, 0.02))
-            slider = Slider(ax=ax, label=label,
-                            valmin=min_val, valmax=max_val,
-                            valinit=self.initial_alphas[i], valstep=0.025)
-            self.sliders.append(slider)
+            valmin, valmax = (-1.6, 1.6) if i == 0 else (0.0, 3.0) if i == 1 else (-1.0, 1.0)
 
-            # Create decrease/increase buttons
-            ax_decrease = plt.axes((0.16, first_slider_y + 0.06 + i * 0.02, 0.04, 0.02))
-            ax_increase = plt.axes((0.80, first_slider_y + 0.06 + i * 0.02, 0.04, 0.02))
+            slider = Slider(
+                ax=ax_slider,
+                label=f'β{i + 1}0',
+                valmin=valmin,
+                valmax=valmax,
+                valinit=self.initial_betas[i],
+                valstep=0.01
+            )
+
             btn_decrease = Button(ax_decrease, '-')
             btn_increase = Button(ax_increase, '+')
-            self.buttons.extend([btn_decrease, btn_increase])
 
-        # Style font sizes for all sliders
-        for slider in [self.slider_z, self.slider_n, self.slider_alpha] + self.sliders:
-            slider.label.set_fontsize(12)
-            slider.valtext.set_fontsize(12)
+            slider.label.set_fontsize(18)
+            slider.valtext.set_fontsize(18)
 
-        # Create buttons
-        ax_reset = plt.axes((0.8, 0.25, 0.1, 0.04))
-        self.reset_button = Button(ax=ax_reset, label='Reset')
+            self.sliders.append(slider)
+            self.decrease_buttons.append(btn_decrease)
+            self.increase_buttons.append(btn_increase)
 
-        ax_save = plt.axes((0.8, 0.2, 0.1, 0.04))
+    def create_action_buttons(self):
+        """Create save and reset buttons."""
+        ax_save = plt.axes((0.75, 0.45, 0.1, 0.04))
         self.save_button = Button(ax=ax_save, label='Save Plot')
 
-        # Create configuration buttons on the left
-        config_labels = ['Ground State', 'First Saddle Point', 'Secondary Minimum', 'Second Saddle Point']
-        for i, label in enumerate(config_labels):
-            ax_config = plt.axes((0.02, 0.6 - i * 0.1, 0.1, 0.04))
-            btn = Button(ax=ax_config, label=label)
-            self.config_buttons.append(btn)
+        ax_reset = plt.axes((0.86, 0.45, 0.1, 0.04))
+        self.reset_button = Button(ax=ax_reset, label='Reset')
 
-    def apply_configuration(self, config_num):
-        """Apply a predefined configuration."""
-        # These are placeholder values - you can set your own configurations
-        configs = {
-            0: {'Z': 92, 'N': 144, 'alpha': 0.250, 'params': [0.0, 0.0, 0.0, 0.075]},  # Ground state
-            1: {'Z': 92, 'N': 144, 'alpha': 0.350, 'params': [0.0, 0.0, 0.0, -0.075]},  # First saddle point
-            2: {'Z': 92, 'N': 144, 'alpha': 0.525, 'params': [0.0, 0.0, 0.0, 0.025]},  # Secondary minimum
-            3: {'Z': 92, 'N': 144, 'alpha': 0.650, 'params': [0.2, 0.0, 0.025, 0.050]}  # Second saddle point
-        }
+    def create_text_input(self):
+        """Create text input field and submit button."""
+        ax_input = plt.axes((0.25, 0.42, 0.5, 0.02))
+        self.text_box = TextBox(ax_input, 'Parameters')
+        self.text_box.label.set_fontsize(12)
 
-        config = configs[config_num]
-        self.slider_z.set_val(config['Z'])
-        self.slider_n.set_val(config['N'])
-        self.slider_alpha.set_val(config['alpha'])
-        for slider, value in zip(self.sliders, config['params']):
-            slider.set_val(value)
+        ax_submit = plt.axes((0.80, 0.42, 0.1, 0.02))
+        self.submit_button = Button(ax_submit, 'Submit')
+
+        # Enable key events for the text box
+        text_box_widget = self.text_box.ax.figure.canvas.get_tk_widget()
+        self.root = text_box_widget.master
+        self.root.bind_all('<Control-v>', self.handle_paste)
+
+    def handle_paste(self, _):
+        """Handle paste events from clipboard."""
+        try:
+            clipboard_text = self.root.clipboard_get()
+            self.text_box.set_val(clipboard_text)
+            return "break"  # Prevents default paste behavior
+        except Exception as e:
+            print(f"Error pasting from clipboard: {e}")
+            return "break"
 
     def setup_event_handlers(self):
         """Set up all event handlers for controls."""
         # Connect slider update functions
-        self.slider_z.on_changed(self.update_plot)
-        self.slider_n.on_changed(self.update_plot)
-        self.slider_alpha.on_changed(self.update_plot)
         for slider in self.sliders:
             slider.on_changed(self.update_plot)
+        self.slider_z.on_changed(self.update_plot)
+        self.slider_n.on_changed(self.update_plot)
 
-        # Connect proton/neutron button handlers
+        # Connect button handlers
+        for i, slider in enumerate(self.sliders):
+            self.decrease_buttons[i].on_clicked(self.create_button_handler(slider, -1))
+            self.increase_buttons[i].on_clicked(self.create_button_handler(slider, 1))
+
         self.btn_z_decrease.on_clicked(self.create_button_handler(self.slider_z, -1))
         self.btn_z_increase.on_clicked(self.create_button_handler(self.slider_z, 1))
         self.btn_n_decrease.on_clicked(self.create_button_handler(self.slider_n, -1))
         self.btn_n_increase.on_clicked(self.create_button_handler(self.slider_n, 1))
 
-        # Connect main alpha button handlers
-        self.btn_alpha_decrease.on_clicked(self.create_button_handler(self.slider_alpha, -1))
-        self.btn_alpha_increase.on_clicked(self.create_button_handler(self.slider_alpha, 1))
-
-        # Connect alpha parameter button handlers
-        for i, slider in enumerate(self.sliders):
-            self.buttons[i * 2].on_clicked(self.create_button_handler(slider, -1))  # Decrease button
-            self.buttons[i * 2 + 1].on_clicked(self.create_button_handler(slider, 1))  # Increase button
-
         # Connect action buttons
-        self.reset_button.on_clicked(self.reset_values)
+        self.submit_button.on_clicked(self.submit_parameters)
         self.save_button.on_clicked(self.save_plot)
-
-        # Connect configuration buttons
-        for i, btn in enumerate(self.config_buttons):
-            btn.on_clicked(lambda event, num=i: self.apply_configuration(num))
+        self.reset_button.on_clicked(self.reset_values)
 
     @staticmethod
     def create_button_handler(slider_obj: Slider, increment: int):
@@ -447,142 +395,179 @@ class CassiniShapePlotter:
 
     def reset_values(self, _):
         """Reset all sliders to their initial values."""
+        for slider in self.sliders:
+            slider.set_val(0.0)
         self.slider_z.set_val(self.initial_z)
         self.slider_n.set_val(self.initial_n)
-        self.slider_alpha.set_val(self.initial_alpha)
-        for slider, init_val in zip(self.sliders, self.initial_alphas):
-            slider.set_val(init_val)
+        self.text_box.set_val('')
 
-    def save_plot(self, _):
+    def submit_parameters(self, _):
+        """Handle parameter submission from text input."""
+        try:
+            values = [float(val) for val in self.text_box.text.split()]
+            if len(values) != 14:  # 2 for Z,N + 12 for betas
+                raise ValueError("Expected 14 values: Z N β10 β20 β30 β40 β50 β60 β70 β80 β90 β100 β110 β120")
+
+            # Validate Z and N ranges
+            if not (82 <= values[0] <= 120 and 100 <= values[1] <= 180):
+                raise ValueError("Z must be between 82-120 and N between 100-180")
+
+            # Update Z and N sliders
+            self.slider_z.set_val(int(values[0]))
+            self.slider_n.set_val(int(values[1]))
+
+            # Update beta parameter sliders
+            for i, slider in enumerate(self.sliders):
+                if not (slider.valmin <= values[i + 2] <= slider.valmax):
+                    raise ValueError(f"β{i + 1}0 must be between {slider.valmin} and {slider.valmax}")
+                slider.set_val(values[i + 2])
+
+            # Clear the text box and error message
+            self.text_box.set_val('')
+            self.error_text.set_text('')
+            self.fig.canvas.draw_idle()
+
+        except (ValueError, IndexError) as e:
+            error_msg = f"Error: {str(e)}\nPlease use format: Z N β10 β20 β30 β40 β50 β60 β70 β80"
+            self.error_text.set_text(error_msg)
+            self.fig.canvas.draw_idle()
+
+    def save_plot(self, _=None):
         """Save the current plot to a file."""
+        parameters = [s.val for s in self.sliders]
         number_of_protons = int(self.slider_z.val)
         number_of_neutrons = int(self.slider_n.val)
-        params = [self.slider_alpha.val] + [s.val for s in self.sliders]
-        filename = f"cassini_shape_{number_of_protons}_{number_of_neutrons}_{'_'.join(f'{p:.2f}' for p in params)}.png"
+        beta_values = "_".join(f"{p:.2f}" for p in parameters)
+        filename = f"{number_of_protons}_{number_of_neutrons}_{beta_values}.png"
         self.fig.savefig(filename)
         print(f"Plot saved as {filename}")
 
-    def update_plot(self, _):
-        """Update the plot with new parameters."""
+    def update_plot(self, _=None):
+        """Update the plot with new parameters and calculate measurements."""
         # Get current parameters
-        current_params = CassiniParameters(
+        current_params = NuclearParameters(
             protons=int(self.slider_z.val),
             neutrons=int(self.slider_n.val),
-            alpha=self.slider_alpha.val,
-            alpha_params=[s.val for s in self.sliders]
+            beta_values=[s.val for s in self.sliders]
         )
 
         # Calculate new shape
-        calculator = CassiniShapeCalculator(current_params)
-        rho_bar, z_bar = calculator.calculate_coordinates(self.x_points)
+        calculator = NuclearShapeCalculator(current_params)
+        plot_radius = calculator.calculate_radius(self.theta)
+        plot_x = plot_radius * np.cos(self.theta)
+        plot_y = plot_radius * np.sin(self.theta)
 
-        # Calculate the volume of the shape before scaling, sphere volume and volume scaling factor
-        sphere_volume = calculator.calculate_sphere_volume()
-        volume_pre_scale = calculator.integrate_volume(rho_bar, z_bar)
-        volume_fixing_factor = sphere_volume / volume_pre_scale
+        # Update plot data
+        self.line.set_data(plot_x, plot_y)
 
-        # Calculate the radius scaling factor
-        radius_scaling_factor = (volume_fixing_factor ** (1 / 3))
+        # Initialize shape analyzer
+        analyzer = ShapeAnalyzer(plot_x, plot_y, self.theta)
 
-        # Calculate c_male
-        c_male = 1 / radius_scaling_factor
+        # Find intersection points with axes
+        x_axis_positive = analyzer.find_nearest_point(plot_x, plot_y, 0)
+        x_axis_negative = analyzer.find_nearest_point(plot_x, plot_y, np.pi)
+        y_axis_positive = analyzer.find_nearest_point(plot_x, plot_y, np.pi / 2)
+        y_axis_negative = analyzer.find_nearest_point(plot_x, plot_y, -np.pi / 2)
 
-        # Calculate center of mass
-        z_cm_bar = calculator.calculate_zcm(rho_bar, z_bar)
+        # Remove previous lines if they exist
+        for attr in ['x_axis_line', 'y_axis_line', 'neck_line']:
+            if hasattr(self.ax_plot, attr):
+                getattr(self.ax_plot, attr).remove()
 
-        # Transform rho_bar and z_bar to rho and z
-        rho = rho_bar / c_male  # Scale the shape
-        z = (z_bar - z_cm_bar) / c_male  # Center the shape
+        # Draw axis lines
+        self.ax_plot.x_axis_line = self.ax_plot.plot(
+            [x_axis_negative[0], x_axis_positive[0]],
+            [x_axis_negative[1], x_axis_positive[1]],
+            color='red'
+        )[0]
 
-        # Calculate post-scale volume using the same integration method
-        volume_post_scale = calculator.integrate_volume(rho, z)
+        self.ax_plot.y_axis_line = self.ax_plot.plot(
+            [y_axis_negative[0], y_axis_positive[0]],
+            [y_axis_negative[1], y_axis_positive[1]],
+            color='blue'
+        )[0]
 
-        # Recalculate center of mass
-        z_cm = calculator.calculate_zcm(rho, z)
-
-        # Update plot
-        self.line.set_data(z, rho)
-        self.line_mirror.set_data(z, -rho)
-
-        # Update reference sphere
-        R_0 = current_params.r0 * (current_params.nucleons ** (1 / 3))
-        theta = np.linspace(0, 2 * np.pi, 200)
-        sphere_x = R_0 * np.cos(theta)
-        sphere_y = R_0 * np.sin(theta)
-        self.sphere_line.set_data(sphere_x, sphere_y)
-
-        # Fit the shape using spherical harmonics
-        r = np.sqrt(rho ** 2 + z ** 2)
-        theta = np.arccos(z / r)
-        fitted_func, fit_results = calculator.fit_shape(rho, z)
-
-        # Generate points for fitted shape
-        theta_fit = np.linspace(0, np.pi, 200)
-        r_fit = fitted_func(theta_fit)
-        x_fit = r_fit * np.cos(theta_fit)
-        y_fit = r_fit * np.sin(theta_fit)
-
-        # Update fitted shape line
-        self.fit_line.set_data(x_fit, y_fit)
-
-        # Update plot limits
-        max_val = max(np.max(np.abs(z)), np.max(np.abs(rho))) * 1.2
-        self.ax_plot.set_xlim(-max_val, max_val)
-        self.ax_plot.set_ylim(-max_val, max_val)
-
-        # Calculate maximum dimensions
-        max_x = np.max(np.abs(z))  # Maximum in x-direction (z-coordinate)
-        max_y = np.max(np.abs(rho))  # Maximum in y-direction (rho-coordinate)
-        total_length = 2 * max_x  # Full length in x-direction
-        total_width = 2 * max_y  # Full width in y-direction
-
-        # Add volume, center of mass, and dimension information
-        info_text = (
-            f"Sphere volume: {sphere_volume:.4f} fm³\n"
-            f"Shape volume (before scaling): {volume_pre_scale:.4f} fm³\n"
-            f"Volume fixing factor: {volume_fixing_factor:.4f}\n"
-            f"Radius scaling factor: {radius_scaling_factor:.4f}\n"
-            f"c_male: {c_male:.4f}\n"
-            f"Shape volume (after scaling): {volume_post_scale:.4f} fm³\n"
-            f"Volume difference: {abs(sphere_volume - volume_post_scale):.4f} fm³\n"
-            f"Z_bar center of mass: {z_cm_bar:.4f} fm\n"
-            f"Z center of mass: {z_cm:.2f} fm\n"
-            f"Max X length: {total_length:.4f} fm\n"
-            f"Max Y length: {total_width:.4f} fm\n\n"
-            f"Fit Results:\n"
-            + "\n".join(f"β_{k} = {v:.4f}" for k, v in fit_results['parameters'].items())
-            + f"\nR² = {fit_results['r_squared']:.4f}"
+        # Calculate and draw necks
+        neck_thickness_45_135, neck_x_45_135, neck_y_45_135 = analyzer.find_neck_thickness(
+            (45, 135)
+        )
+        neck_thickness_30_150, neck_x_30_150, neck_y_30_150 = analyzer.find_neck_thickness(
+            (30, 150)
         )
 
-        # Remove old text if it exists
-        for artist in self.ax_plot.texts:
-            artist.remove()
+        # Remove previous neck lines
+        for attr in ['neck_line_45_135', 'neck_line_30_150']:
+            if hasattr(self.ax_plot, attr):
+                getattr(self.ax_plot, attr).remove()
 
-        # Add new text at fixed position on the right
-        bbox = dict(facecolor='white', alpha=0.8, edgecolor='none')
-        text_x = max_val + 0.2  # Fixed offset from the right edge of the plot
-        text_y = 0  # Center vertically
-        self.ax_plot.text(text_x, text_y, info_text,
-                          fontsize=12, verticalalignment='center',
-                          horizontalalignment='left',
-                          transform=self.ax_plot.transData,
-                          bbox=bbox)
+        # Draw neck lines
+        self.ax_plot.neck_line_45_135 = self.ax_plot.plot(
+            [neck_x_45_135, neck_x_45_135],
+            [-neck_thickness_45_135 / 2, neck_thickness_45_135 / 2],
+            color='green',
+            linewidth=2,
+            label='Neck (45-135)'
+        )[0]
 
-        # Update title with current nuclear information
-        self.ax_plot.set_title(f'Nuclear Shape (Z={current_params.protons}, N={current_params.neutrons}, A={current_params.nucleons})',
-                               fontsize=24)
+        self.ax_plot.neck_line_30_150 = self.ax_plot.plot(
+            [neck_x_30_150, neck_x_30_150],
+            [-neck_thickness_30_150 / 2, neck_thickness_30_150 / 2],
+            color='purple',
+            linewidth=2,
+            label='Neck (30-150)'
+        )[0]
 
+        # Update plot limits
+        max_radius = np.max(np.abs(plot_radius)) * 1.5
+        self.ax_plot.set_xlim(-max_radius, max_radius)
+        self.ax_plot.set_ylim(-max_radius, max_radius)
+
+        # Calculate measurements
+        max_x_length = np.max(plot_x) - np.min(plot_x)
+        max_y_length = np.max(plot_y) - np.min(plot_y)
+        along_x_length = (calculator.calculate_radius(np.array([0.0]))[0] + calculator.calculate_radius(np.array([np.pi]))[0])
+        along_y_length = (calculator.calculate_radius(np.array([np.pi / 2]))[0] + calculator.calculate_radius(np.array([-np.pi / 2]))[0])
+
+        # Calculate volumes
+        sphere_volume = calculator.calculate_sphere_volume()
+        shape_volume = calculator.calculate_volume()
+        volume_fix = calculator.calculate_volume_fixing_factor()
+        shape_volume_integration = calculator.calculate_volume_by_integration()
+
+        # Check calculations
+        volume_mismatch = abs(sphere_volume - shape_volume_integration) > 1.0
+        negative_radius = np.any(plot_radius < 0)
+
+        # Update information display
+        self.volume_text.set_text(
+            f'Sphere Volume: {sphere_volume:.4f} fm³\n'
+            f'Shape Volume: {shape_volume:.4f} fm³\n'
+            f'Volume Fixing Factor: {volume_fix:.8f}\n'
+            f'Radius Fixing Factor: {volume_fix ** (1 / 3):.8f}\n'
+            f'Integrated Volume: {shape_volume_integration:.4f} fm³\n'
+            f'Volume Conservation: {"✓" if not volume_mismatch else f"✗: {sphere_volume:.4f} vs {shape_volume_integration:.4f} fm³"}\n'
+            f'Max X Length: {max_x_length:.2f} fm\n'
+            f'Max Y Length: {max_y_length:.2f} fm\n'
+            f'Length Along X Axis (red): {along_x_length:.2f} fm\n'
+            f'Length Along Y Axis (blue): {along_y_length:.2f} fm\n'
+            f'Neck Thickness (45°-135°, green): {neck_thickness_45_135:.2f} fm\n'
+            f'Neck Thickness (30°-150°, purple): {neck_thickness_30_150:.2f} fm\n' +
+            ('Negative radius detected!\n' if negative_radius else '')
+        )
+
+        # Update the legend
+        self.ax_plot.legend(fontsize='small', loc='upper right')
         self.fig.canvas.draw_idle()
 
     def run(self):
         """Start the interactive plotting interface."""
-        self.update_plot(None)
+        self.update_plot()
         plt.show(block=True)
 
 
 def main():
     """Main entry point for the application."""
-    plotter = CassiniShapePlotter()
+    plotter = NuclearShapePlotter()
     plotter.run()
 
 
