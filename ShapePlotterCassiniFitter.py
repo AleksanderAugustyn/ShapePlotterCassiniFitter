@@ -150,6 +150,25 @@ def calculate_volume_analytical(protons: int, neutrons: int, beta_parameters: Li
     return volume
 
 
+def validate_fit(rho: np.ndarray, z: np.ndarray, r_beta: np.ndarray, theta_beta: np.ndarray) -> float:
+    """Validate the fit by comparing calculated radius vector with the one obtained from beta parameters."""
+    r_alfa = np.sqrt(rho ** 2 + z ** 2)
+    theta_alfa = np.arccos(z / r_alfa)
+
+    # print(len(theta_alfa), len(theta_beta))
+
+    # print(theta_alfa)
+
+    # print(abs(r_alfa - r_beta))
+
+    # Calculate RMS error
+    rms_error = np.sqrt(np.mean((r_alfa - r_beta) ** 2))
+
+    # print(f"RMS Error: {rms_error:.4f} fm")
+
+    return rms_error
+
+
 @dataclass
 class CassiniParameters:
     """Class to store Cassini shape parameters."""
@@ -644,6 +663,11 @@ class CassiniShapePlotter:
 
         # Update the plot with the new shape
         self.line_beta, = self.ax_plot.plot(beta_x, beta_y, 'g', label='Beta', alpha=0.7)
+
+        # Validate the fit
+        beta_theta_validate = np.linspace(np.pi, 0, 2000)
+        beta_radius_validate = calculate_beta_radius(current_params.protons, current_params.neutrons, beta_parameters, beta_theta_validate) * beta_radius_fixing_factor
+        validate_fit(rho, z, beta_theta_validate, beta_radius_validate)
 
         # Add volume, center of mass, and dimension information
         info_text = (
