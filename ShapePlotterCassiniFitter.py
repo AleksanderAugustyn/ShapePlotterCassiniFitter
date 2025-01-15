@@ -49,8 +49,8 @@ def calculate_beta_parameters(rho: np.ndarray, z: np.ndarray, lambda_beta: int) 
     numerator = integrate.trapezoid(integrand_num, theta_beta)
     denominator = integrate.trapezoid(integrand_den, theta_beta)
 
-    # Calculate the final coefficient using equation (8)
-    beta_lm = 4 * np.pi * numerator / denominator
+    # Calculate the final coefficient using equation (8), with sqrt(4π) factor
+    beta_lm = np.sqrt(4 * np.pi) * numerator / denominator
 
     # If beta_lm is close to zero, set it to zero
     if np.isclose(beta_lm, 0):
