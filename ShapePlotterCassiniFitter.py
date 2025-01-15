@@ -389,8 +389,8 @@ class CassiniShapePlotter:
         sphere_x = R_0 * np.cos(theta)
         sphere_y = R_0 * np.sin(theta)
 
-        self.line, = self.ax_plot.plot(z, rho, 'b-', label='Scaled')
-        self.line_mirror, = self.ax_plot.plot(z, -rho, 'b-')
+        self.line, = self.ax_plot.plot(z, rho, 'b-', label='Scaled', linewidth=3, alpha=0.5)
+        self.line_mirror, = self.ax_plot.plot(z, -rho, 'b-', linewidth=3, alpha=0.5)
         self.line_unscaled, = self.ax_plot.plot(z_bar, rho_bar, 'r--', label='Unscaled', alpha=0.5)
         self.line_unscaled_mirror, = self.ax_plot.plot(z_bar, -rho_bar, 'r--', alpha=0.5)
         self.sphere_line, = self.ax_plot.plot(sphere_x, sphere_y, '--', color='gray', alpha=0.5, label='R₀')
@@ -662,7 +662,7 @@ class CassiniShapePlotter:
             self.line_beta.remove()
 
         # Update the plot with the new shape
-        self.line_beta, = self.ax_plot.plot(beta_x, beta_y, 'g', label='Beta', alpha=0.7)
+        self.line_beta, = self.ax_plot.plot(beta_x, beta_y, 'r+', label='Beta', alpha=1.0, markersize=1.5)
 
         # Validate the fit
         beta_theta_validate = np.linspace(np.pi, 0, 2000)
