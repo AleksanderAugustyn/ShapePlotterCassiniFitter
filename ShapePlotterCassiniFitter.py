@@ -52,11 +52,10 @@ def calculate_beta_parameters(rho: np.ndarray, z: np.ndarray, lambda_beta: int) 
     # Calculate the final coefficient using equation (8), with sqrt(4π) factor
     beta_lm = np.sqrt(4 * np.pi) * numerator / denominator
 
-    # If beta_lm is close to zero, set it to zero
-    if np.isclose(beta_lm, 0):
-        beta_lm = 0
+    # Round to 3 decimal places
+    np.round(beta_lm, 3)
 
-    print(f"β_{lambda_beta} = {beta_lm:.4f}")
+    print(f"β_{lambda_beta} = {beta_lm:.3f}")
 
     return beta_lm
 
