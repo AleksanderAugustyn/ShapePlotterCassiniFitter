@@ -667,7 +667,7 @@ class CassiniShapePlotter:
             artist.remove()
 
         # Add new text
-        self.ax_plot.text(1.1 * max_val, 0.5 * max_val, info_text,
+        self.ax_plot.text(1.1 * max_val, 0.15 * max_val, info_text,
                           fontsize=24, verticalalignment='center')
 
         # Update title with current nuclear information
