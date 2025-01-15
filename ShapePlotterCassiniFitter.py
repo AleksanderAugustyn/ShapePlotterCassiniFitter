@@ -30,34 +30,43 @@ def calculate_radius_vector(rho: np.ndarray, z: np.ndarray) -> tuple[Any, Any]:
     return r, theta
 
 
-def calculate_beta_parameters(rho: np.ndarray, z: np.ndarray, lambda_beta: int) -> float:
-    """Calculate the β parameters for given radius vector and angle."""
-    # Calculate radius vector and angle
+def calculate_beta_parameters(rho: np.ndarray, z: np.ndarray) -> tuple[float, ...]:
+    """Calculate the first 12 β parameters for given radius vector and angle.
+    
+    Args:
+        rho: Array of radial coordinates
+        z: Array of vertical coordinates
+        
+    Returns:
+        tuple[float, ...]: First 12 β parameters (β₁ through β₁₂)
+    """
+    # Calculate radius vector and angle once
     r_beta, theta_beta = calculate_radius_vector(rho, z)
-
-    # Calculate Y_l0 for the given points
-    Y_lm = np.real(sph_harm_y(lambda_beta, 0, theta_beta, 0.0))
-
-    # Calculate Y_00 (constant for normalization)
+    
+    # Calculate Y_00 once (constant for normalization)
     Y_00 = np.real(sph_harm_y(0, 0, 0.0, 0.0))
-
-    # Prepare integrand: R(θ,φ) * Y_lm * sin(θ)
-    integrand_num = r_beta * Y_lm * np.sin(theta_beta)
-    integrand_den = r_beta * Y_00 * np.sin(theta_beta)
-
-    # Perform numerical integration over theta
-    numerator = integrate.trapezoid(integrand_num, theta_beta)
-    denominator = integrate.trapezoid(integrand_den, theta_beta)
-
-    # Calculate the final coefficient using equation (8), with sqrt(4π) factor
-    beta_lm = np.sqrt(4 * np.pi) * numerator / denominator
-
-    # Round to 3 decimal places
-    np.round(beta_lm, 3)
-
-    print(f"β_{lambda_beta} = {beta_lm:.3f}")
-
-    return beta_lm
+    denominator = integrate.trapezoid(r_beta * Y_00 * np.sin(theta_beta), theta_beta)
+    
+    # Calculate all beta parameters
+    betas = []
+    for lambda_beta in range(1, 13):  # Calculate β₁ through β₁₂
+        # Calculate Y_l0 for current lambda
+        Y_lm = np.real(sph_harm_y(lambda_beta, 0, theta_beta, 0.0))
+        
+        # Calculate numerator integral
+        integrand_num = r_beta * Y_lm * np.sin(theta_beta)
+        numerator = integrate.trapezoid(integrand_num, theta_beta)
+        
+        # Calculate beta parameter
+        beta_lm = np.sqrt(4 * np.pi) * numerator / denominator
+        
+        # Round to 3 decimal places and append
+        beta_lm = np.round(beta_lm, 3)
+        betas.append(beta_lm)
+        
+        print(f"β_{lambda_beta} = {beta_lm:.3f}")
+    
+    return tuple(betas)
 
 
 @dataclass
@@ -506,9 +515,8 @@ class CassiniShapePlotter:
         total_length = 2 * max_x  # Full length in x-direction
         total_width = 2 * max_y  # Full width in y-direction
 
-        # Calculate beta parameters for the shape
-        for lambda_beta in range(1, 13):
-            calculate_beta_parameters(rho, z, lambda_beta)
+        # Calculate all beta parameters for the shape
+        beta_parameters = calculate_beta_parameters(rho, z)
 
         """
         Transform the shape to polar coordinates and plot it
