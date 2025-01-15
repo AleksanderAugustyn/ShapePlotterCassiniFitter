@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import Button, Slider
 from scipy import integrate
-from scipy.special import sph_harm
+from scipy.special import sph_harm_y
 
 matplotlib.use('TkAgg')
 
@@ -36,10 +36,10 @@ def calculate_beta_parameters(rho: np.ndarray, z: np.ndarray, lambda_beta: int) 
     r_beta, theta_beta = calculate_radius_vector(rho, z)
 
     # Calculate Y_l0 for the given points
-    Y_lm = np.real(sph_harm(0, lambda_beta, 0, theta_beta))
+    Y_lm = np.real(sph_harm_y(lambda_beta, 0, theta_beta, 0.0))
 
     # Calculate Y_00 (constant for normalization)
-    Y_00 = np.real(sph_harm(0, 0, 0, theta_beta))
+    Y_00 = np.real(sph_harm_y(0, 0, 0.0, 0.0))
 
     # Prepare integrand: R(θ,φ) * Y_lm * sin(θ)
     integrand_num = r_beta * Y_lm * np.sin(theta_beta)
@@ -453,11 +453,6 @@ class CassiniShapePlotter:
             alpha_params=[s.val for s in self.sliders]
         )
 
-        # Clear old polar plot if it exists
-        if self.line_polar is not None:
-            self.line_polar.remove()
-            self.line_polar_mirror.remove()
-
         # Calculate new shape
         calculator = CassiniShapeCalculator(current_params)
         rho_bar, z_bar = calculator.calculate_coordinates(self.x_points)
@@ -516,6 +511,14 @@ class CassiniShapePlotter:
         for lambda_beta in range(1, 13):
             calculate_beta_parameters(rho, z, lambda_beta)
 
+        """
+        Transform the shape to polar coordinates and plot it
+        
+        # Clear old polar plot if it exists
+        if self.line_polar is not None:
+            self.line_polar.remove()
+            self.line_polar_mirror.remove()
+        
         # Calculate r and theta coordinates
         r, theta = calculate_radius_vector(rho, z)
         x_polar = r * np.cos(theta)
@@ -524,6 +527,7 @@ class CassiniShapePlotter:
         # Update the plot with the new shape
         self.line_polar, = self.ax_plot.plot(x_polar, y_polar, 'y', label='Polar', alpha=0.7)
         self.line_polar_mirror, = self.ax_plot.plot(x_polar, -y_polar, 'y', alpha=0.7)
+        """
 
         # Add volume, center of mass, and dimension information
         info_text = (
