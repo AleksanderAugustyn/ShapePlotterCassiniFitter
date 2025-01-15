@@ -619,12 +619,12 @@ class CassiniShapePlotter:
         # Calculate all beta parameters for the shape
         beta_parameters = calculate_beta_parameters(rho, z)
 
-        print(beta_parameters)
+        # print(beta_parameters)
 
         volume_analytical = calculate_volume_analytical(current_params.protons, current_params.neutrons, beta_parameters)
         beta_volume_fixing_factor = sphere_volume / volume_analytical
         beta_radius_fixing_factor = np.cbrt(beta_volume_fixing_factor)
-        print(f"Volume analytical: {volume_analytical:.4f} fm³, Volume fixing factor: {beta_volume_fixing_factor:.4f}, Radius fixing factor: {beta_radius_fixing_factor:.4f}")
+        # print(f"Volume analytical: {volume_analytical:.4f} fm³, Volume fixing factor: {beta_volume_fixing_factor:.4f}, Radius fixing factor: {beta_radius_fixing_factor:.4f}")
 
         # Calculate beta radius
         beta_theta = np.linspace(0, 2 * np.pi, 400)
@@ -636,7 +636,7 @@ class CassiniShapePlotter:
         beta_volume_theta = np.linspace(0, np.pi, 400)
         beta_volume_radius = calculate_beta_radius(current_params.protons, current_params.neutrons, beta_parameters, beta_volume_theta) * beta_radius_fixing_factor
         volume_post_scale_beta = calculate_beta_volume_by_integration(beta_volume_radius)
-        print(f"Volume post-scale (beta): {volume_post_scale_beta:.4f} fm³, Volume difference: {abs(sphere_volume - volume_post_scale_beta):.4f} fm³")
+        # print(f"Volume post-scale (beta): {volume_post_scale_beta:.4f} fm³, Volume difference: {abs(sphere_volume - volume_post_scale_beta):.4f} fm³")
 
         # Clear old beta plot if it exists
         if self.line_beta is not None:
@@ -657,7 +657,8 @@ class CassiniShapePlotter:
             f"Z_bar center of mass: {z_cm_bar:.4f} fm\n"
             f"Z center of mass: {z_cm:.2f} fm\n"
             f"Max X length: {total_length:.4f} fm\n"
-            f"Max Y length: {total_width:.4f} fm"
+            f"Max Y length: {total_width:.4f} fm\n"
+            f"Beta parameters: {beta_parameters}"
         )
 
         # Remove old text if it exists
