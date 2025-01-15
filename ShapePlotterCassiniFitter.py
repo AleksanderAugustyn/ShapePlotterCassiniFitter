@@ -658,7 +658,8 @@ class CassiniShapePlotter:
             f"Z center of mass: {z_cm:.2f} fm\n"
             f"Max X length: {total_length:.4f} fm\n"
             f"Max Y length: {total_width:.4f} fm\n"
-            f"Beta parameters: {beta_parameters}"
+            f"Beta parameters:\n" + 
+            '\n'.join([f"β{i+1}: {val:.4f}" for i, val in enumerate(beta_parameters)])
         )
 
         # Remove old text if it exists
