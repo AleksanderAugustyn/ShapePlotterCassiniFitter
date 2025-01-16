@@ -157,14 +157,16 @@ def validate_fit(rho: np.ndarray, z: np.ndarray, r_beta: np.ndarray, theta_beta:
 
     # print(len(theta_alfa), len(theta_beta))
 
-    # print(theta_alfa)
+    print(theta_alfa)
 
-    # print(abs(r_alfa - r_beta))
+    print(theta_beta)
+
+    print(abs(r_alfa) - abs(r_beta))
 
     # Calculate RMS error
     rms_error = np.sqrt(np.mean((r_alfa - r_beta) ** 2))
 
-    # print(f"RMS Error: {rms_error:.4f} fm")
+    print(f"RMS Error: {rms_error:.4f} fm")
 
     return rms_error
 
@@ -667,7 +669,7 @@ class CassiniShapePlotter:
         # Validate the fit
         beta_theta_validate = np.linspace(np.pi, 0, 2000)
         beta_radius_validate = calculate_beta_radius(current_params.protons, current_params.neutrons, beta_parameters, beta_theta_validate) * beta_radius_fixing_factor
-        validate_fit(rho, z, beta_theta_validate, beta_radius_validate)
+        validate_fit(rho, z, beta_radius_validate, beta_theta_validate)
 
         # Add volume, center of mass, and dimension information
         info_text = (
