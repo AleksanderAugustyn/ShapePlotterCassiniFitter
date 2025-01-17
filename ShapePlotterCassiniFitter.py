@@ -1,11 +1,11 @@
 """
 Nuclear Shape Plotter using Cassini Ovals - A program to visualize and analyze nuclear shapes.
-This version implements an object-oriented design for better organization and maintainability.
+This version implements an object-oriented design with integrated beta parametrization.
 """
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -22,153 +22,198 @@ def double_factorial(n):
     return math.prod(range(n, 0, -2))
 
 
-def calculate_radius_vector(rho: np.ndarray, z: np.ndarray) -> tuple[Any, Any]:
-    """Calculate the radius vector for given shape in cylindrical coordinates."""
-    r = np.sqrt(rho ** 2 + z ** 2)
-    theta = np.arccos(z / r)
+@dataclass
+class BetaShape:
+    """Data class to store beta shape parameters and related data."""
+    protons: int
+    neutrons: int
+    beta_parameters: List[float]  # β₁ through β₁₂
+    radius: np.ndarray = None
+    theta: np.ndarray = None
 
-    return r, theta
-
-
-def calculate_beta_parameters(rho: np.ndarray, z: np.ndarray) -> List[float]:
-    """Calculate the first 12 β parameters for given radius vector and angle.
-    
-    Args:
-        rho: Array of radial coordinates
-        z: Array of vertical coordinates
-        
-    Returns:
-        tuple[float, ...]: First 12 β parameters (β₁ through β₁₂)
-    """
-    # Calculate radius vector and angle once
-    r_beta, theta_beta = calculate_radius_vector(rho, z)
-
-    # Calculate Y_00 once (constant for normalization)
-    Y_00 = np.real(sph_harm_y(0, 0, 0.0, 0.0))
-    denominator = integrate.trapezoid(r_beta * Y_00 * np.sin(theta_beta), theta_beta)
-
-    # Calculate all beta parameters
-    betas = []
-    for lambda_beta in range(1, 13):  # Calculate β₁ through β₁₂
-        # Calculate Y_l0 for current lambda
-        Y_lm = np.real(sph_harm_y(lambda_beta, 0, theta_beta, 0.0))
-
-        # Calculate numerator integral
-        integrand_num = r_beta * Y_lm * np.sin(theta_beta)
-        numerator = integrate.trapezoid(integrand_num, theta_beta)
-
-        # Calculate beta parameter
-        beta_lm = float(np.sqrt(4 * np.pi) * numerator / denominator)
-
-        # Round to 3 decimal places and append
-        beta_lm = np.round(beta_lm, 3)
-        betas.append(beta_lm)
-
-    return betas
+    @property
+    def nucleons(self) -> int:
+        """Total number of nucleons."""
+        return self.protons + self.neutrons
 
 
-def calculate_beta_radius(protons: int, neutrons: int, beta_parameters: List[float], theta: np.ndarray) -> np.ndarray:
-    """Calculate nuclear radius as a function of proton and neutron numbers and beta parameters."""
-    radius = np.ones_like(theta)
+class BetaParametrization:
+    """Class for handling beta parametrization calculations and fitting."""
 
-    for harmonic_index in range(1, 13):
-        harmonic = np.real(sph_harm_y(harmonic_index, 0, theta, 0.0))
-        radius += beta_parameters[harmonic_index - 1] * harmonic
-
-    # volume_fix = self.calculate_volume_fixing_factor() ** (1 / 3)
-    return 1.16 * ((protons + neutrons) ** (1 / 3)) * radius
-
-
-def calculate_beta_volume_by_integration(beta_radius: np.ndarray, n_theta: int = 400) -> float:
-    """Calculate nucleus volume by numerical integration.
+    def __init__(self, r0: float = 1.16):
+        """Initialize BetaParametrization with radius constant.
 
         Args:
-            beta_radius: Array of beta radius values
+            r0: Radius constant in fm (default: 1.16)
+        """
+        self.r0 = r0
+
+    def calculate_beta_parameters(self, rho: np.ndarray, z: np.ndarray) -> List[float]:
+        """Calculate the first 12 β parameters for given shape coordinates.
+
+        Args:
+            rho: Array of radial coordinates
+            z: Array of vertical coordinates
+
+        Returns:
+            List[float]: First 12 β parameters (β₁ through β₁₂)
+        """
+        # Calculate radius vector and angle
+        r_beta, theta_beta = self._calculate_radius_vector(rho, z)
+
+        # Calculate Y_00 for normalization
+        Y_00 = np.real(sph_harm_y(0, 0, 0.0, 0.0))
+        denominator = integrate.trapezoid(r_beta * Y_00 * np.sin(theta_beta), theta_beta)
+
+        # Calculate all beta parameters
+        betas = []
+        for lambda_beta in range(1, 13):  # Calculate β₁ through β₁₂
+            # Calculate Y_l0 for current lambda
+            Y_lm = np.real(sph_harm_y(lambda_beta, 0, theta_beta, 0.0))
+
+            # Calculate numerator integral
+            integrand_num = r_beta * Y_lm * np.sin(theta_beta)
+            numerator = integrate.trapezoid(integrand_num, theta_beta)
+
+            # Calculate and round beta parameter
+            beta_lm = float(np.sqrt(4 * np.pi) * numerator / denominator)
+            beta_lm = np.round(beta_lm, 3)
+            betas.append(beta_lm)
+
+        return betas
+
+    def calculate_beta_radius(self, shape: BetaShape, theta: np.ndarray) -> np.ndarray:
+        """Calculate nuclear radius as a function of angle using beta parameters.
+
+        Args:
+            shape: BetaShape instance containing nuclear parameters
+            theta: Array of angles to calculate radius at
+
+        Returns:
+            np.ndarray: Radius values at given angles
+        """
+        radius = np.ones_like(theta)
+
+        # Add contributions from each harmonic
+        for harmonic_index in range(1, 13):
+            harmonic = np.real(sph_harm_y(harmonic_index, 0, theta, 0.0))
+            radius += shape.beta_parameters[harmonic_index - 1] * harmonic
+
+        # Scale by A^(1/3)
+        return self.r0 * (shape.nucleons ** (1 / 3)) * radius
+
+    def calculate_volume(self, shape: BetaShape, n_theta: int = 400) -> float:
+        """Calculate nucleus volume by numerical integration.
+
+        Args:
+            shape: BetaShape instance containing nuclear parameters
             n_theta: Number of points for theta discretization
 
         Returns:
             float: Volume of the nucleus in fm³
         """
-    theta = np.linspace(0, np.pi, n_theta)
-    r = beta_radius
-    integrand = 2 * np.pi * (r ** 3 * np.sin(theta)) / 3
+        theta = np.linspace(0, np.pi, n_theta)
+        r = self.calculate_beta_radius(shape, theta)
+        integrand = 2 * np.pi * (r ** 3 * np.sin(theta)) / 3
 
-    return integrate.trapezoid(integrand, theta)
+        return integrate.trapezoid(integrand, theta)
 
+    def calculate_volume_analytical(self, shape: BetaShape) -> float:
+        """Calculate the volume of a deformed nucleus using analytical formula.
 
-def calculate_volume_analytical(protons: int, neutrons: int, beta_parameters: List[float]) -> float:
-    """Calculate the volume of a deformed nucleus using analytical formula."""
-    nucleons = protons + neutrons
-    r0 = 1.16
+        Args:
+            shape: BetaShape instance containing nuclear parameters
 
-    beta10, beta20, beta30, beta40, beta50, beta60, beta70, beta80, beta90, beta100, beta110, beta120 = beta_parameters
+        Returns:
+            float: Volume calculated analytically in fm³
+        """
+        """Calculate the volume of a deformed nucleus using analytical formula."""
+        nucleons = shape.nucleons
+        r0 = self.r0
+        beta10, beta100, beta110, beta120, beta20, beta30, beta40, beta50, beta60, beta70, beta80, beta90 = shape.beta_parameters
 
-    volume = (nucleons * r0 ** 3 * (74207381348100 * np.pi ** 1.5 + 648269351730 * np.sqrt(21) * beta100 ** 3 + 5807534192460 * np.sqrt(
-        69) * beta10 * beta110 * beta120 + 8429951570040 * beta110 ** 2 * beta120 + 2724132411000 * beta120 ** 3 + 11131107202215 * np.sqrt(5) * beta10 ** 2 * beta20 + 6996695955678 * np.sqrt(
-        5) * beta110 ** 2 * beta20 + 6990550416850 * np.sqrt(5) * beta120 ** 2 * beta20 + 2650263619575 * np.sqrt(5) * beta20 ** 3 + 2197030131010 * np.sqrt(161) * beta110 * beta120 * beta30 + 4770474515235 * np.sqrt(
-        105) * beta10 * beta20 * beta30 + 7420738134810 * np.sqrt(
-        5) * beta20 * beta30 ** 2 + 11968032555765 * beta110 ** 2 * beta40 + 11932146401175 * beta120 ** 2 * beta40 + 23852372576175 * beta20 ** 2 * beta40 + 10601054478300 * np.sqrt(
-        21) * beta10 * beta30 * beta40 + 15178782548475 * beta30 ** 2 * beta40 + 7227991689750 * np.sqrt(5) * beta20 * beta40 ** 2 + 4503594822075 * beta40 ** 3 + 1395572678500 * np.sqrt(
-        253) * beta110 * beta120 * beta50 + 2409330563250 * np.sqrt(385) * beta20 * beta30 * beta50 + 8432656971375 * np.sqrt(33) * beta10 * beta40 * beta50 + 3335996164500 * np.sqrt(
-        77) * beta30 * beta40 * beta50 + 7135325129625 * np.sqrt(
-        5) * beta20 * beta50 ** 2 + 12843585233325 * beta40 * beta50 ** 2 + 2832191612250 * np.sqrt(13) * beta110 ** 2 * beta60 + 2813654593750 * np.sqrt(13) * beta120 ** 2 * beta60 + 6486659208750 * np.sqrt(
-        13) * beta30 ** 2 * beta60 + 5837993287875 * np.sqrt(65) * beta20 * beta40 * beta60 + 3891995525250 * np.sqrt(13) * beta40 ** 2 * beta60 + 2335197315150 * np.sqrt(429) * beta10 * beta50 * beta60 + 798726124350 * np.sqrt(
-        3289) * beta110 * beta50 * beta60 + 908132289225 * np.sqrt(1001) * beta30 * beta50 * beta60 + 3357800061000 * np.sqrt(13) * beta50 ** 2 * beta60 + 22843567156410 * beta120 * beta60 ** 2 + 7083431855955 * np.sqrt(
-        5) * beta20 * beta60 ** 2 + 12500173863450 * beta40 * beta60 ** 2 + 1044291885000 * np.sqrt(13) * beta60 ** 3 + 1042707290625 * np.sqrt(345) * beta110 * beta120 * beta70 + 2472247527750 * np.sqrt(
-        345) * beta110 * beta40 * beta70 + 4540661446125 * np.sqrt(105) * beta30 * beta40 * beta70 + 3560036439960 * np.sqrt(165) * beta120 * beta50 * beta70 + 8173190603025 * np.sqrt(
-        33) * beta20 * beta50 * beta70 + 2136781857000 * np.sqrt(165) * beta40 * beta50 * beta70 + 5993673108885 * np.sqrt(65) * beta10 * beta60 * beta70 + 383388539688 * np.sqrt(
-        4485) * beta110 * beta60 * beta70 + 769241468520 * np.sqrt(
-        1365) * beta30 * beta60 * beta70 + 506079913500 * np.sqrt(2145) * beta50 * beta60 * beta70 + 12690870642450 * beta120 * beta70 ** 2 + 7051380128100 * np.sqrt(
-        5) * beta20 * beta70 ** 2 + 12297741898050 * beta40 * beta70 ** 2 + 3012380437500 * np.sqrt(13) * beta60 * beta70 ** 2 + 2238344983875 * np.sqrt(17) * beta110 ** 2 * beta80 + 2211803343750 * np.sqrt(
-        17) * beta120 ** 2 * beta80 + 882945545625 * np.sqrt(2737) * beta110 * beta30 * beta80 + 11125113874875 * np.sqrt(17) * beta120 * beta40 * beta80 + 5609052374625 * np.sqrt(17) * beta40 ** 2 * beta80 + 395559604440 * np.sqrt(
-        4301) * beta110 * beta50 * beta80 + 1282069114200 * np.sqrt(1309) * beta30 * beta50 * beta80 + 3247346111625 * np.sqrt(17) * beta50 ** 2 * beta80 + 1714091619240 * np.sqrt(
-        221) * beta120 * beta60 * beta80 + 1410276025620 * np.sqrt(
-        1105) * beta20 * beta60 * beta80 + 1821887688600 * np.sqrt(221) * beta40 * beta60 * beta80 + 2741266198125 * np.sqrt(17) * beta60 ** 2 * beta80 + 5238168095160 * np.sqrt(85) * beta10 * beta70 * beta80 + 276891723108 * np.sqrt(
-        5865) * beta110 * beta70 * beta80 + 668025485820 * np.sqrt(1785) * beta30 * beta70 * beta80 + 433782783000 * np.sqrt(2805) * beta50 * beta70 * beta80 + 2521231453125 * np.sqrt(
-        17) * beta70 ** 2 * beta80 + 10415266251390 * beta120 * beta80 ** 2 + 7030172969820 * np.sqrt(5) * beta20 * beta80 ** 2 + 12167607063150 * beta40 * beta80 ** 2 + 2939035522500 * np.sqrt(
-        13) * beta60 * beta80 ** 2 + 800070781125 * np.sqrt(17) * beta80 ** 3 + 6111105 * beta100 ** 2 * (
-                                            1440600 * beta120 + 31 * (36975 * np.sqrt(5) * beta20 + 63423 * beta40 + 15080 * np.sqrt(13) * beta60 + 12005 * np.sqrt(17) * beta80)) + 849332484000 * np.sqrt(
-        437) * beta110 * beta120 * beta90 + 1000671618375 * np.sqrt(2185) * beta110 * beta20 * beta90 + 4002686473500 * np.sqrt(133) * beta120 * beta30 * beta90 + 1271441585700 * np.sqrt(
-        437) * beta110 * beta40 * beta90 + 1785512103375 * np.sqrt(209) * beta120 * beta50 * beta90 + 3188303455050 * np.sqrt(209) * beta40 * beta50 * beta90 + 285681936540 * np.sqrt(
-        5681) * beta110 * beta60 * beta90 + 1113375809700 * np.sqrt(1729) * beta30 * beta60 * beta90 + 506079913500 * np.sqrt(2717) * beta50 * beta60 * beta90 + 1241238758760 * np.sqrt(
-        285) * beta120 * beta70 * beta90 + 6203093796900 * np.sqrt(57) * beta20 * beta70 * beta90 + 1590536871000 * np.sqrt(285) * beta40 * beta70 * beta90 + 363057329250 * np.sqrt(
-        3705) * beta60 * beta70 * beta90 + 1550773449225 * np.sqrt(
-        969) * beta10 * beta80 * beta90 + 222786443880 * np.sqrt(7429) * beta110 * beta80 * beta90 + 590770837800 * np.sqrt(2261) * beta30 * beta80 * beta90 + 380345773500 * np.sqrt(
-        3553) * beta50 * beta80 * beta90 + 290445863400 * np.sqrt(
-        4845) * beta70 * beta80 * beta90 + 9387573945750 * beta120 * beta90 ** 2 + 7015403698875 * np.sqrt(5) * beta20 * beta90 ** 2 + 12078695064150 * beta40 * beta90 ** 2 + 2890627878600 * np.sqrt(
-        13) * beta60 * beta90 ** 2 + 2324911563975 * np.sqrt(17) * beta80 * beta90 ** 2 + 55655536011075 * np.sqrt(np.pi) * (beta10 ** 2 + beta100 ** 2 + beta110 ** 2 + beta120 ** 2 + beta20 ** 2 + beta30 ** 2 + beta40 ** 2 +
-                                                                                                                             beta50 ** 2 + beta60 ** 2 + beta70 ** 2 + beta80 ** 2 + beta90 ** 2) + 2035 * beta100 * (
-                                            930397104 * np.sqrt(21) * beta110 ** 2 + 912234960 * np.sqrt(21) * beta120 ** 2 + 2242291194 * np.sqrt(105) * beta120 * beta20 + 2841109700 *
-                                            np.sqrt(21) * beta120 * beta40 + 2462010390 * np.sqrt(21) * beta50 ** 2 + 635359725 * np.sqrt(273) * beta120 * beta60 + 1367783550 * np.sqrt(273) * beta40 * beta60 + 1391571090 *
-                                            np.sqrt(21) * beta60 ** 2 + 10160677800 * np.sqrt(5) * beta30 * beta70 + 654157350 * np.sqrt(385) * beta50 * beta70 + 1156074444 * np.sqrt(21) * beta70 ** 2 + 491891400 *
-                                            np.sqrt(357) * beta120 * beta80 + 544322025 * np.sqrt(1785) * beta20 * beta80 + 694207800 * np.sqrt(357) * beta40 * beta80 + 156997764 * np.sqrt(4641) * beta60 * beta80 + 1051409268 *
-                                            np.sqrt(21) * beta80 ** 2 + 1822295475 * np.sqrt(57) * beta30 * beta90 + 166609872 * np.sqrt(4389) * beta50 * beta90 + 377957580 * np.sqrt(665) * beta70 * beta90 + 992760678 *
-                                            np.sqrt(21) * beta90 ** 2 + 8940555 * beta10 * (209 * np.sqrt(161) * beta110 + 230 * np.sqrt(133) * beta90) + 858 * beta110 * (
-                                                    1925658 * np.sqrt(69) * beta30 + 175305 * np.sqrt(5313) * beta50 + 394940 * np.sqrt(805) * beta70 + 108045 * np.sqrt(9177) * beta90)))) / (
-                     5.5655536011075e13 * np.sqrt(np.pi))
+        volume = (nucleons * r0 ** 3 * (74207381348100 * np.pi ** 1.5 + 648269351730 * np.sqrt(21) * beta100 ** 3 + 5807534192460 * np.sqrt(
+            69) * beta10 * beta110 * beta120 + 8429951570040 * beta110 ** 2 * beta120 + 2724132411000 * beta120 ** 3 + 11131107202215 * np.sqrt(5) * beta10 ** 2 * beta20 + 6996695955678 * np.sqrt(
+            5) * beta110 ** 2 * beta20 + 6990550416850 * np.sqrt(5) * beta120 ** 2 * beta20 + 2650263619575 * np.sqrt(5) * beta20 ** 3 + 2197030131010 * np.sqrt(161) * beta110 * beta120 * beta30 + 4770474515235 * np.sqrt(
+            105) * beta10 * beta20 * beta30 + 7420738134810 * np.sqrt(
+            5) * beta20 * beta30 ** 2 + 11968032555765 * beta110 ** 2 * beta40 + 11932146401175 * beta120 ** 2 * beta40 + 23852372576175 * beta20 ** 2 * beta40 + 10601054478300 * np.sqrt(
+            21) * beta10 * beta30 * beta40 + 15178782548475 * beta30 ** 2 * beta40 + 7227991689750 * np.sqrt(5) * beta20 * beta40 ** 2 + 4503594822075 * beta40 ** 3 + 1395572678500 * np.sqrt(
+            253) * beta110 * beta120 * beta50 + 2409330563250 * np.sqrt(385) * beta20 * beta30 * beta50 + 8432656971375 * np.sqrt(33) * beta10 * beta40 * beta50 + 3335996164500 * np.sqrt(
+            77) * beta30 * beta40 * beta50 + 7135325129625 * np.sqrt(
+            5) * beta20 * beta50 ** 2 + 12843585233325 * beta40 * beta50 ** 2 + 2832191612250 * np.sqrt(13) * beta110 ** 2 * beta60 + 2813654593750 * np.sqrt(13) * beta120 ** 2 * beta60 + 6486659208750 * np.sqrt(
+            13) * beta30 ** 2 * beta60 + 5837993287875 * np.sqrt(65) * beta20 * beta40 * beta60 + 3891995525250 * np.sqrt(13) * beta40 ** 2 * beta60 + 2335197315150 * np.sqrt(429) * beta10 * beta50 * beta60 + 798726124350 * np.sqrt(
+            3289) * beta110 * beta50 * beta60 + 908132289225 * np.sqrt(1001) * beta30 * beta50 * beta60 + 3357800061000 * np.sqrt(13) * beta50 ** 2 * beta60 + 22843567156410 * beta120 * beta60 ** 2 + 7083431855955 * np.sqrt(
+            5) * beta20 * beta60 ** 2 + 12500173863450 * beta40 * beta60 ** 2 + 1044291885000 * np.sqrt(13) * beta60 ** 3 + 1042707290625 * np.sqrt(345) * beta110 * beta120 * beta70 + 2472247527750 * np.sqrt(
+            345) * beta110 * beta40 * beta70 + 4540661446125 * np.sqrt(105) * beta30 * beta40 * beta70 + 3560036439960 * np.sqrt(165) * beta120 * beta50 * beta70 + 8173190603025 * np.sqrt(
+            33) * beta20 * beta50 * beta70 + 2136781857000 * np.sqrt(165) * beta40 * beta50 * beta70 + 5993673108885 * np.sqrt(65) * beta10 * beta60 * beta70 + 383388539688 * np.sqrt(
+            4485) * beta110 * beta60 * beta70 + 769241468520 * np.sqrt(
+            1365) * beta30 * beta60 * beta70 + 506079913500 * np.sqrt(2145) * beta50 * beta60 * beta70 + 12690870642450 * beta120 * beta70 ** 2 + 7051380128100 * np.sqrt(
+            5) * beta20 * beta70 ** 2 + 12297741898050 * beta40 * beta70 ** 2 + 3012380437500 * np.sqrt(13) * beta60 * beta70 ** 2 + 2238344983875 * np.sqrt(17) * beta110 ** 2 * beta80 + 2211803343750 * np.sqrt(
+            17) * beta120 ** 2 * beta80 + 882945545625 * np.sqrt(2737) * beta110 * beta30 * beta80 + 11125113874875 * np.sqrt(17) * beta120 * beta40 * beta80 + 5609052374625 * np.sqrt(17) * beta40 ** 2 * beta80 + 395559604440 * np.sqrt(
+            4301) * beta110 * beta50 * beta80 + 1282069114200 * np.sqrt(1309) * beta30 * beta50 * beta80 + 3247346111625 * np.sqrt(17) * beta50 ** 2 * beta80 + 1714091619240 * np.sqrt(
+            221) * beta120 * beta60 * beta80 + 1410276025620 * np.sqrt(
+            1105) * beta20 * beta60 * beta80 + 1821887688600 * np.sqrt(221) * beta40 * beta60 * beta80 + 2741266198125 * np.sqrt(17) * beta60 ** 2 * beta80 + 5238168095160 * np.sqrt(85) * beta10 * beta70 * beta80 + 276891723108 * np.sqrt(
+            5865) * beta110 * beta70 * beta80 + 668025485820 * np.sqrt(1785) * beta30 * beta70 * beta80 + 433782783000 * np.sqrt(2805) * beta50 * beta70 * beta80 + 2521231453125 * np.sqrt(
+            17) * beta70 ** 2 * beta80 + 10415266251390 * beta120 * beta80 ** 2 + 7030172969820 * np.sqrt(5) * beta20 * beta80 ** 2 + 12167607063150 * beta40 * beta80 ** 2 + 2939035522500 * np.sqrt(
+            13) * beta60 * beta80 ** 2 + 800070781125 * np.sqrt(17) * beta80 ** 3 + 6111105 * beta100 ** 2 * (
+                                                1440600 * beta120 + 31 * (36975 * np.sqrt(5) * beta20 + 63423 * beta40 + 15080 * np.sqrt(13) * beta60 + 12005 * np.sqrt(17) * beta80)) + 849332484000 * np.sqrt(
+            437) * beta110 * beta120 * beta90 + 1000671618375 * np.sqrt(2185) * beta110 * beta20 * beta90 + 4002686473500 * np.sqrt(133) * beta120 * beta30 * beta90 + 1271441585700 * np.sqrt(
+            437) * beta110 * beta40 * beta90 + 1785512103375 * np.sqrt(209) * beta120 * beta50 * beta90 + 3188303455050 * np.sqrt(209) * beta40 * beta50 * beta90 + 285681936540 * np.sqrt(
+            5681) * beta110 * beta60 * beta90 + 1113375809700 * np.sqrt(1729) * beta30 * beta60 * beta90 + 506079913500 * np.sqrt(2717) * beta50 * beta60 * beta90 + 1241238758760 * np.sqrt(
+            285) * beta120 * beta70 * beta90 + 6203093796900 * np.sqrt(57) * beta20 * beta70 * beta90 + 1590536871000 * np.sqrt(285) * beta40 * beta70 * beta90 + 363057329250 * np.sqrt(
+            3705) * beta60 * beta70 * beta90 + 1550773449225 * np.sqrt(
+            969) * beta10 * beta80 * beta90 + 222786443880 * np.sqrt(7429) * beta110 * beta80 * beta90 + 590770837800 * np.sqrt(2261) * beta30 * beta80 * beta90 + 380345773500 * np.sqrt(
+            3553) * beta50 * beta80 * beta90 + 290445863400 * np.sqrt(
+            4845) * beta70 * beta80 * beta90 + 9387573945750 * beta120 * beta90 ** 2 + 7015403698875 * np.sqrt(5) * beta20 * beta90 ** 2 + 12078695064150 * beta40 * beta90 ** 2 + 2890627878600 * np.sqrt(
+            13) * beta60 * beta90 ** 2 + 2324911563975 * np.sqrt(17) * beta80 * beta90 ** 2 + 55655536011075 * np.sqrt(np.pi) * (beta10 ** 2 + beta100 ** 2 + beta110 ** 2 + beta120 ** 2 + beta20 ** 2 + beta30 ** 2 + beta40 ** 2 +
+                                                                                                                                 beta50 ** 2 + beta60 ** 2 + beta70 ** 2 + beta80 ** 2 + beta90 ** 2) + 2035 * beta100 * (
+                                                930397104 * np.sqrt(21) * beta110 ** 2 + 912234960 * np.sqrt(21) * beta120 ** 2 + 2242291194 * np.sqrt(105) * beta120 * beta20 + 2841109700 *
+                                                np.sqrt(21) * beta120 * beta40 + 2462010390 * np.sqrt(21) * beta50 ** 2 + 635359725 * np.sqrt(273) * beta120 * beta60 + 1367783550 * np.sqrt(273) * beta40 * beta60 + 1391571090 *
+                                                np.sqrt(21) * beta60 ** 2 + 10160677800 * np.sqrt(5) * beta30 * beta70 + 654157350 * np.sqrt(385) * beta50 * beta70 + 1156074444 * np.sqrt(21) * beta70 ** 2 + 491891400 *
+                                                np.sqrt(357) * beta120 * beta80 + 544322025 * np.sqrt(1785) * beta20 * beta80 + 694207800 * np.sqrt(357) * beta40 * beta80 + 156997764 * np.sqrt(4641) * beta60 * beta80 + 1051409268 *
+                                                np.sqrt(21) * beta80 ** 2 + 1822295475 * np.sqrt(57) * beta30 * beta90 + 166609872 * np.sqrt(4389) * beta50 * beta90 + 377957580 * np.sqrt(665) * beta70 * beta90 + 992760678 *
+                                                np.sqrt(21) * beta90 ** 2 + 8940555 * beta10 * (209 * np.sqrt(161) * beta110 + 230 * np.sqrt(133) * beta90) + 858 * beta110 * (
+                                                        1925658 * np.sqrt(69) * beta30 + 175305 * np.sqrt(5313) * beta50 + 394940 * np.sqrt(805) * beta70 + 108045 * np.sqrt(9177) * beta90)))) / (
+                         5.5655536011075e13 * np.sqrt(np.pi))
 
-    return volume
+        return volume
 
+    def validate_fit(self, rho: np.ndarray, z: np.ndarray, shape: BetaShape) -> float:
+        """Validate the beta parameter fit by comparing calculated and fitted shapes.
 
-def validate_fit(rho: np.ndarray, z: np.ndarray, r_beta: np.ndarray, theta_beta: np.ndarray) -> float:
-    """Validate the fit by comparing calculated radius vector with the one obtained from beta parameters."""
-    r_alfa = np.sqrt(rho ** 2 + z ** 2)
-    theta_alfa = np.arccos(z / r_alfa)
+        Args:
+            rho: Array of radial coordinates
+            z: Array of vertical coordinates
+            shape: BetaShape instance containing fitted parameters
 
-    # print(len(theta_alfa), len(theta_beta))
+        Returns:
+            float: RMS error of the fit
+        """
+        r_alfa = np.sqrt(rho ** 2 + z ** 2)
+        theta_alfa = np.arccos(z / r_alfa)
 
-    print(theta_alfa)
+        # Calculate radius using beta parameters
+        r_beta = self.calculate_beta_radius(shape, theta_alfa)
 
-    print(theta_beta)
+        # Calculate RMS error
+        rms_error = np.sqrt(np.mean((r_alfa - r_beta) ** 2))
 
-    print(abs(r_alfa) - abs(r_beta))
+        return rms_error
 
-    # Calculate RMS error
-    rms_error = np.sqrt(np.mean((r_alfa - r_beta) ** 2))
+    @staticmethod
+    def _calculate_radius_vector(rho: np.ndarray, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Calculate the radius vector for given shape in cylindrical coordinates.
 
-    print(f"RMS Error: {rms_error:.4f} fm")
+        Args:
+            rho: Array of radial coordinates
+            z: Array of vertical coordinates
 
-    return rms_error
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: Radius and theta arrays
+        """
+        r = np.sqrt(rho ** 2 + z ** 2)
+        theta = np.arccos(z / r)
+        return r, theta
 
 
 @dataclass
@@ -177,7 +222,7 @@ class CassiniParameters:
     protons: int
     neutrons: int
     alpha: float = 0.0
-    alpha_params: List[float] = field(default_factory=lambda: [0.0] * 5)  # Now includes α₂
+    alpha_params: List[float] = field(default_factory=lambda: [0.0] * 5)
     r0: float = 1.16  # Radius constant in fm
 
     def __post_init__(self):
@@ -185,7 +230,7 @@ class CassiniParameters:
         if not isinstance(self.alpha_params, list):
             raise TypeError("alpha_params must be a list")
 
-        if len(self.alpha_params) != 5:  # Updated for 5 parameters
+        if len(self.alpha_params) != 5:
             _original_length = len(self.alpha_params)
             if len(self.alpha_params) < 5:
                 self.alpha_params.extend([0.0] * (5 - len(self.alpha_params)))
@@ -212,10 +257,9 @@ class CassiniShapeCalculator:
         sum_all = sum(alpha_params)
         sum_alternating = sum((-1) ** n * val for n, val in enumerate(alpha_params, 1))
 
-        # Calculate factorial sum term
         sum_factorial = 0
-        for n in range(1, 3):  # For α₂ and α₄
-            idx = 2 * n - 1  # Convert to 0-based index
+        for n in range(1, 3):
+            idx = 2 * n - 1
             if idx < len(alpha_params):
                 val = alpha_params[idx]
                 sum_factorial += ((-1) ** n * val *
@@ -233,15 +277,12 @@ class CassiniShapeCalculator:
         epsilon = self.calculate_epsilon()
         s = epsilon * R_0 ** 2
 
-        # Calculate R(x) using Legendre polynomials
         R = R_0 * (1 + sum(alpha_n * np.polynomial.legendre.Legendre.basis(n + 1)(x)
                            for n, alpha_n in enumerate(self.params.alpha_params)))
 
-        # Calculate p(x)
         p2 = R ** 4 + 2 * s * R ** 2 * (2 * x ** 2 - 1) + s ** 2
         p = np.sqrt(p2)
 
-        # Calculate ρ and z
         rho = np.sqrt(np.maximum(0, p - R ** 2 * (2 * x ** 2 - 1) - s)) / np.sqrt(2)
         z = np.sign(x) * np.sqrt(np.maximum(0, p + R ** 2 * (2 * x ** 2 - 1) + s)) / np.sqrt(2)
 
@@ -249,24 +290,12 @@ class CassiniShapeCalculator:
 
     @staticmethod
     def calculate_zcm(rho: np.ndarray, z: np.ndarray) -> float:
-        """Calculate the z-coordinate of the center of mass for given shape coordinates.
-
-        Args:
-            rho: Array of radial coordinates
-            z: Array of vertical coordinates
-
-        Returns:
-            float: Z-coordinate of the center of mass
-        """
-        # Calculate differential elements
+        """Calculate the z-coordinate of the center of mass."""
         dz = np.diff(z)
         rho_midpoints = (rho[1:] + rho[:-1]) / 2
         z_midpoints = (z[1:] + z[:-1]) / 2
 
-        # Volume element dV = πρ²dz for constant density
         volume_elements = rho_midpoints * rho_midpoints * dz
-
-        # Calculate center of mass
         total_volume = np.sum(volume_elements)
         z_cm = np.sum(volume_elements * z_midpoints) / total_volume
 
@@ -274,20 +303,10 @@ class CassiniShapeCalculator:
 
     @staticmethod
     def integrate_volume(rho: np.ndarray, z: np.ndarray) -> float:
-        """Calculate volume by numerically integrating the provided shape coordinates.
-
-        Args:
-            rho: Array of radial coordinates
-            z: Array of vertical coordinates
-
-        Returns:
-            float: Volume calculated by numerical integration
-        """
-        # Calculate differential elements
+        """Calculate volume by numerical integration."""
         dz = np.diff(z)
         rho_midpoints = (rho[1:] + rho[:-1]) / 2
 
-        # Volume element dV = πρ²dz
         volume_elements = np.pi * rho_midpoints * rho_midpoints * dz
         total_volume = np.abs(np.sum(volume_elements))
 
@@ -304,18 +323,22 @@ class CassiniShapePlotter:
 
     def __init__(self):
         """Initialize the plotter with default settings."""
-        # Define all instance attributes
-        self.line_beta = None
-        self.line_polar = None
-        self.line_polar_mirror = None
-
         self.initial_z = 92  # Uranium
         self.initial_n = 144
         self.initial_alpha = 0.0
-        self.initial_alphas = [0.0, 0.0, 0.0, 0.0, 0.0]  # α₁, α₂, α₃, α₄
+        self.initial_alphas = [0.0, 0.0, 0.0, 0.0, 0.0]
         self.x_points = np.linspace(-1, 1, 2000)
 
-        # UI elements
+        # Initialize beta parametrization
+        self.beta_parametrization = BetaParametrization()
+
+        # Initialize UI elements
+        self.btn_alpha_increase = None
+        self.btn_alpha_decrease = None
+        self.btn_n_increase = None
+        self.btn_n_decrease = None
+        self.btn_z_increase = None
+        self.btn_z_decrease = None
         self.fig = None
         self.ax_plot = None
         self.line = None
@@ -325,20 +348,15 @@ class CassiniShapePlotter:
         self.sphere_line = None
         self.point_zcm = None
         self.point_zcm_bar = None
+        self.line_beta = None
         self.slider_z = None
         self.slider_n = None
-        self.btn_z_increase = None
-        self.btn_z_decrease = None
-        self.btn_n_increase = None
-        self.btn_n_decrease = None
         self.slider_alpha = None
-        self.btn_alpha_decrease = None
-        self.btn_alpha_increase = None
         self.sliders = []
-        self.buttons = []  # Will store alpha parameter +/- buttons
+        self.buttons = []
         self.reset_button = None
         self.save_button = None
-        self.config_buttons = []  # Store configuration buttons
+        self.config_buttons = []
 
         # Initialize nuclear parameters
         self.nuclear_params = CassiniParameters(
@@ -568,31 +586,40 @@ class CassiniShapePlotter:
         calculator = CassiniShapeCalculator(current_params)
         rho_bar, z_bar = calculator.calculate_coordinates(self.x_points)
 
-        # Calculate the volume of the shape before scaling, sphere volume and volume scaling factor
+        # Calculate volumes and scaling factors
         sphere_volume = calculator.calculate_sphere_volume()
         volume_pre_scale = calculator.integrate_volume(rho_bar, z_bar)
         volume_fixing_factor = sphere_volume / volume_pre_scale
-
-        # Calculate the radius scaling factor
         radius_scaling_factor = (volume_fixing_factor ** (1 / 3))
-
-        # Calculate c_male
         c_male = 1 / radius_scaling_factor
 
-        # Calculate center of mass
+        # Calculate center of mass and transform coordinates
         z_cm_bar = calculator.calculate_zcm(rho_bar, z_bar)
-
-        # Transform rho_bar and z_bar to rho and z
-        rho = rho_bar / c_male  # Scale the shape
-        z = (z_bar - z_cm_bar) / c_male  # Center the shape
-
-        # Calculate post-scale volume using the same integration method
+        rho = rho_bar / c_male
+        z = (z_bar - z_cm_bar) / c_male
         volume_post_scale = calculator.integrate_volume(rho, z)
-
-        # Recalculate center of mass
         z_cm = calculator.calculate_zcm(rho, z)
 
-        # Update plot for both scaled and unscaled shapes
+        # Create BetaShape instance and calculate parameters
+        beta_shape = BetaShape(
+            protons=current_params.protons,
+            neutrons=current_params.neutrons,
+            beta_parameters=self.beta_parametrization.calculate_beta_parameters(rho, z)
+        )
+
+        # Calculate beta volume
+        beta_volume = self.beta_parametrization.calculate_volume(beta_shape)
+        volume_analytical = self.beta_parametrization.calculate_volume_analytical(beta_shape)
+        beta_volume_fixing_factor = sphere_volume / beta_volume
+        beta_radius_fixing_factor = (beta_volume_fixing_factor ** (1 / 3))
+
+        # Calculate beta-related quantities
+        beta_theta = np.linspace(0, 2 * np.pi, 400)
+        beta_radius = self.beta_parametrization.calculate_beta_radius(beta_shape, beta_theta) * beta_radius_fixing_factor
+        beta_x = beta_radius * np.cos(beta_theta)
+        beta_y = beta_radius * np.sin(beta_theta)
+
+        # Update plot
         self.line.set_data(z, rho)
         self.line_mirror.set_data(z, -rho)
         self.line_unscaled.set_data(z_bar, rho_bar)
@@ -607,99 +634,49 @@ class CassiniShapePlotter:
         sphere_y = R_0 * np.sin(theta)
         self.sphere_line.set_data(sphere_x, sphere_y)
 
+        # Update beta plot
+        if self.line_beta is not None:
+            self.line_beta.remove()
+        self.line_beta, = self.ax_plot.plot(beta_x, beta_y, 'r+', label='Beta', alpha=1.0, markersize=1.5)
+
         # Update plot limits
         max_val = max(np.max(np.abs(z)), np.max(np.abs(rho))) * 1.2
         self.ax_plot.set_xlim(-max_val, max_val)
         self.ax_plot.set_ylim(-max_val, max_val)
 
-        # Calculate maximum dimensions
-        # max_x = first_z + last_z
-        max_x = np.abs(z[0] - z[-1])  # Maximum in x-direction (z-coordinate)
-        max_y = np.max(np.abs(rho))  # Maximum in y-direction (rho-coordinate)
-        total_length = max_x  # Full length in x-direction
-        total_width = 2 * max_y  # Full width in y-direction
+        # Calculate dimensions
+        max_x = np.abs(z[0] - z[-1])
+        max_y = np.max(np.abs(rho))
+        total_length = max_x
+        total_width = 2 * max_y
 
-        """
-        Transform the shape to polar coordinates and plot it
-        
-        # Clear old polar plot if it exists
-        if self.line_polar is not None:
-            self.line_polar.remove()
-            self.line_polar_mirror.remove()
-        
-        # Calculate r and theta coordinates
-        r, theta = calculate_radius_vector(rho, z)
-        x_polar = r * np.cos(theta)
-        y_polar = r * np.sin(theta)
-
-        # Update the plot with the new shape
-        self.line_polar, = self.ax_plot.plot(x_polar, y_polar, 'y', label='Polar', alpha=0.7)
-        self.line_polar_mirror, = self.ax_plot.plot(x_polar, -y_polar, 'y', alpha=0.7)
-        """
-
-        # Calculate all beta parameters for the shape
-        beta_parameters = calculate_beta_parameters(rho, z)
-
-        # print(beta_parameters)
-
-        volume_analytical = calculate_volume_analytical(current_params.protons, current_params.neutrons, beta_parameters)
-        beta_volume_fixing_factor = sphere_volume / volume_analytical
-        beta_radius_fixing_factor = np.cbrt(beta_volume_fixing_factor)
-        # print(f"Volume analytical: {volume_analytical:.4f} fm³, Volume fixing factor: {beta_volume_fixing_factor:.4f}, Radius fixing factor: {beta_radius_fixing_factor:.4f}")
-
-        # Calculate beta radius
-        beta_theta = np.linspace(0, 2 * np.pi, 400)
-        beta_radius = calculate_beta_radius(current_params.protons, current_params.neutrons, beta_parameters, beta_theta) * beta_radius_fixing_factor
-        beta_x = beta_radius * np.cos(beta_theta)
-        beta_y = beta_radius * np.sin(beta_theta)
-
-        # Calculate volume using numerical integration
-        beta_volume_theta = np.linspace(0, np.pi, 400)
-        beta_volume_radius = calculate_beta_radius(current_params.protons, current_params.neutrons, beta_parameters, beta_volume_theta) * beta_radius_fixing_factor
-        volume_post_scale_beta = calculate_beta_volume_by_integration(beta_volume_radius)
-        # print(f"Volume post-scale (beta): {volume_post_scale_beta:.4f} fm³, Volume difference: {abs(sphere_volume - volume_post_scale_beta):.4f} fm³")
-
-        # Clear old beta plot if it exists
-        if self.line_beta is not None:
-            self.line_beta.remove()
-
-        # Update the plot with the new shape
-        self.line_beta, = self.ax_plot.plot(beta_x, beta_y, 'r+', label='Beta', alpha=1.0, markersize=1.5)
-
-        # Validate the fit
-        beta_theta_validate = np.linspace(np.pi, 0, 2000)
-        beta_radius_validate = calculate_beta_radius(current_params.protons, current_params.neutrons, beta_parameters, beta_theta_validate) * beta_radius_fixing_factor
-        validate_fit(rho, z, beta_radius_validate, beta_theta_validate)
-
-        # Add volume, center of mass, and dimension information
+        # Update information display
         info_text = (
-            f"Sphere volume: {sphere_volume:.4f} fm³\n"
-            f"Shape volume (before scaling): {volume_pre_scale:.4f} fm³\n"
-            f"Volume fixing factor: {volume_fixing_factor:.4f}\n"
-            f"Radius scaling factor: {radius_scaling_factor:.4f}\n"
-            f"c_male: {c_male:.4f}\n"
-            f"Shape volume (after scaling): {volume_post_scale:.4f} fm³\n"
-            f"Volume difference: {abs(sphere_volume - volume_post_scale):.4f} fm³\n"
-            f"Z_bar center of mass: {z_cm_bar:.4f} fm\n"
-            f"Z center of mass: {z_cm:.2f} fm\n"
-            f"Max X length: {total_length:.4f} fm\n"
-            f"Max Y length: {total_width:.4f} fm\n"
-            f"Beta parameters:\n" + 
-            '\n'.join([f"β{i+1}: {val:.4f}" for i, val in enumerate(beta_parameters)])
+                f"Sphere volume: {sphere_volume:.4f} fm³\n"
+                f"Shape volume (before scaling): {volume_pre_scale:.4f} fm³\n"
+                f"Volume fixing factor: {volume_fixing_factor:.4f}\n"
+                f"Radius scaling factor: {radius_scaling_factor:.4f}\n"
+                f"c_male: {c_male:.4f}\n"
+                f"Shape volume (after scaling): {volume_post_scale:.4f} fm³\n"
+                f"Volume difference: {abs(sphere_volume - volume_post_scale):.4f} fm³\n"
+                f"Beta volume: {beta_volume:.4f} fm³\n"
+                f"Analytical volume: {volume_analytical:.4f} fm³\n"
+                f"Z_bar center of mass: {z_cm_bar:.4f} fm\n"
+                f"Z center of mass: {z_cm:.2f} fm\n"
+                f"Max X length: {total_length:.4f} fm\n"
+                f"Max Y length: {total_width:.4f} fm\n"
+                f"Beta parameters:\n" +
+                '\n'.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters)])
         )
 
-        # Remove old text if it exists
+        # Update display
         for artist in self.ax_plot.texts:
             artist.remove()
-
-        # Add new text
         self.ax_plot.text(1.1 * max_val, 0.15 * max_val, info_text,
                           fontsize=24, verticalalignment='center')
-
-        # Update title with current nuclear information
-        self.ax_plot.set_title(f'Nuclear Shape (Z={current_params.protons}, N={current_params.neutrons}, A={current_params.nucleons})',
-                               fontsize=24)
-
+        self.ax_plot.set_title(
+            f'Nuclear Shape (Z={current_params.protons}, N={current_params.neutrons}, A={current_params.nucleons})',
+            fontsize=24)
         self.fig.canvas.draw_idle()
 
     def run(self):
