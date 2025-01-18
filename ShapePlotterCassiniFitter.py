@@ -178,7 +178,7 @@ class BetaParametrization:
 
         return volume
 
-    def validate_fit(self, rho: np.ndarray, z: np.ndarray, shape: BetaShape) -> float:
+    def validate_fit(self, rho: np.ndarray, z: np.ndarray, shape: BetaShape) -> dict:
         """Validate the beta parameter fit by comparing calculated and fitted shapes.
 
         Args:
@@ -189,16 +189,39 @@ class BetaParametrization:
         Returns:
             float: RMS error of the fit
         """
-        r_alfa = np.sqrt(rho ** 2 + z ** 2)
-        theta_alfa = np.arccos(z / r_alfa)
+        # Calculate actual and fitted radii
+        r_actual = np.sqrt(rho ** 2 + z ** 2)
+        theta_actual = np.arccos(z / r_actual)
+        r_fitted = self.calculate_beta_radius(shape, theta_actual)
 
-        # Calculate radius using beta parameters
-        r_beta = self.calculate_beta_radius(shape, theta_alfa)
+        # Calculate basic error metrics
+        residuals = r_actual - r_fitted
+        absolute_residuals = np.abs(residuals)
+        squared_residuals = residuals ** 2
 
-        # Calculate RMS error
-        rms_error = np.sqrt(np.mean((r_alfa - r_beta) ** 2))
+        # Root Mean Square Error (RMSE)
+        root_mean_square_error = np.sqrt(np.mean(squared_residuals))
 
-        return rms_error
+        # Mean Absolute Error (MAE)
+        mean_absolute_error = np.mean(absolute_residuals)
+
+        # Mean Absolute Percentage Error (MAPE)
+        mean_absolute_percentage_error = np.mean(np.abs(residuals / r_actual)) * 100
+
+        # R-squared (coefficient of determination)
+        ss_res = np.sum(squared_residuals)
+        ss_tot = np.sum((r_actual - np.mean(r_actual)) ** 2)
+        r_squared = 1 - (ss_res / ss_tot)
+
+        if r_squared < 0:
+            r_squared = -1
+
+        return {
+            'RMSE': root_mean_square_error,
+            'MAE': mean_absolute_error,
+            'MAPE': mean_absolute_percentage_error,
+            'R²': r_squared
+        }
 
     @staticmethod
     def _calculate_radius_vector(rho: np.ndarray, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -672,7 +695,10 @@ class CassiniShapePlotter:
                 ' '.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters[:4])]) + '\n' +
                 ' '.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters[4:8], 4)]) + '\n' +
                 ' '.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters[8:], 8)]) +
-                f"\nRMS error: {rms_error:.4f}"
+                f"\nRMS error: {rms_error['RMSE']:.4f} fm"
+                f"\nMAE: {rms_error['MAE']:.4f} fm"
+                f"\nMAPE: {rms_error['MAPE']:.4f}%"
+                f"\nR²: {rms_error['R²']:.4f}"
         )
 
         # Update display
