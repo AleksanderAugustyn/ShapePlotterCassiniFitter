@@ -669,8 +669,10 @@ class CassiniShapePlotter:
                 f"Max X length: {total_length:.4f} fm\n"
                 f"Max Y length: {total_width:.4f} fm\n"
                 f"Beta parameters:\n" +
-                '\n'.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters)])
-                + f"\nRMS error: {rms_error:.4f}"
+                ' '.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters[:4])]) + '\n' +
+                ' '.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters[4:8], 4)]) + '\n' +
+                ' '.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters[8:], 8)]) +
+                f"\nRMS error: {rms_error:.4f}"
         )
 
         # Update display
