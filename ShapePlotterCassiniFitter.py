@@ -376,7 +376,7 @@ class CassiniShapePlotter:
         self.fig = plt.figure(figsize=(12, 8))
         self.ax_plot = self.fig.add_subplot(111)
 
-        plt.subplots_adjust(left=0.1, bottom=0.35, right=0.9, top=0.9)
+        plt.subplots_adjust(left=0.05, bottom=0.35, right=0.85, top=0.9)
 
         # Set up the main plot
         self.ax_plot.set_aspect('equal')
@@ -678,7 +678,7 @@ class CassiniShapePlotter:
         # Update display
         for artist in self.ax_plot.texts:
             artist.remove()
-        self.ax_plot.text(1.1 * max_val, 0.15 * max_val, info_text,
+        self.ax_plot.text(0.9 * max_val, 0.15 * max_val, info_text,
                           fontsize=24, verticalalignment='center')
         self.ax_plot.set_title(
             f'Nuclear Shape (Z={current_params.protons}, N={current_params.neutrons}, A={current_params.nucleons})',
