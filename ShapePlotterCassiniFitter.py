@@ -619,6 +619,9 @@ class CassiniShapePlotter:
         beta_x = beta_radius * np.cos(beta_theta)
         beta_y = beta_radius * np.sin(beta_theta)
 
+        # Calculate RMS error
+        rms_error = self.beta_parametrization.validate_fit(rho, z, beta_shape)
+
         # Update plot
         self.line.set_data(z, rho)
         self.line_mirror.set_data(z, -rho)
@@ -667,6 +670,7 @@ class CassiniShapePlotter:
                 f"Max Y length: {total_width:.4f} fm\n"
                 f"Beta parameters:\n" +
                 '\n'.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters)])
+                + f"\nRMS error: {rms_error:.4f}"
         )
 
         # Update display
