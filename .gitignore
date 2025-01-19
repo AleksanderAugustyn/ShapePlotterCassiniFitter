@@ -9,3 +9,4 @@ gen
 *.txt
 *.png
 .aider*
+*.csv
