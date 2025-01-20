@@ -130,35 +130,50 @@ def main():
         alpha4_range=alpha4_range
     )
 
-    # Save results to CSV
+    # Save detailed results to CSV
     output_filename = 'nuclear_shape_analysis.txt'
-    results_df.to_csv(output_filename, sep=' ', float_format='%.3f', header=False, index=False)
+    # Add protons and neutrons columns
+    results_df.insert(0, 'protons', protons)
+    results_df.insert(1, 'neutrons', neutrons)
+    
+    # Reorder columns to have parameters in logical order
+    cols_order = ['protons', 'neutrons', 
+                  'alpha', 'alpha1', 'alpha3', 'alpha4',
+                  'beta1', 'beta2', 'beta3', 'beta4', 'beta5',
+                  'RMSE', 'MAE', 'MAPE', 'R_squared']
+    results_df = results_df[cols_order]
+    
+    results_df.to_csv(output_filename, sep=' ', float_format='%.6f', header=True, index=False)
     print(f"\nResults saved to {output_filename}")
 
-    # Print summary statistics
-    print("\nFit Quality Summary:")
-    print(f"Average RMSE: {results_df['RMSE'].mean():.4f} fm")
-    print(f"Maximum RMSE: {results_df['RMSE'].max():.4f} fm")
-    print(f"Minimum RMSE: {results_df['RMSE'].min():.4f} fm")
-    print(f"Standard Deviation of RMSE: {results_df['RMSE'].std():.4f} fm")
-
-    # Print parameter combinations that gave best and worst fits
+    # Create summary file
     best_fit = results_df.loc[results_df['RMSE'].idxmin()]
     worst_fit = results_df.loc[results_df['RMSE'].idxmax()]
+    
+    with open('analysis_summary.txt', 'w') as f:
+        f.write("Nuclear Shape Analysis Summary\n")
+        f.write("=============================\n\n")
+        f.write(f"Nucleus: Z={protons}, N={neutrons}\n\n")
+        
+        f.write("RMSE Statistics:\n")
+        f.write(f"Average: {results_df['RMSE'].mean():.6f} fm\n")
+        f.write(f"Minimum: {results_df['RMSE'].min():.6f} fm\n")
+        f.write(f"Maximum: {results_df['RMSE'].max():.6f} fm\n")
+        f.write(f"Std Dev: {results_df['RMSE'].std():.6f} fm\n\n")
+        
+        f.write("Best Fit Parameters:\n")
+        f.write(f"α: {best_fit['alpha']:.6f}\n")
+        f.write(f"α₁: {best_fit['alpha1']:.6f}\n")
+        f.write(f"α₃: {best_fit['alpha3']:.6f}\n")
+        f.write(f"α₄: {best_fit['alpha4']:.6f}\n")
+        f.write(f"β₁: {best_fit['beta1']:.6f}\n")
+        f.write(f"β₂: {best_fit['beta2']:.6f}\n")
+        f.write(f"β₃: {best_fit['beta3']:.6f}\n")
+        f.write(f"β₄: {best_fit['beta4']:.6f}\n")
+        f.write(f"β₅: {best_fit['beta5']:.6f}\n")
+        f.write(f"RMSE: {best_fit['RMSE']:.6f} fm\n")
 
-    print("\nBest Fit Parameters:")
-    print(f"α: {best_fit['alpha']:.2f}")
-    print(f"α₁: {best_fit['alpha1']:.2f}")
-    print(f"α₃: {best_fit['alpha3']:.2f}")
-    print(f"α₄: {best_fit['alpha4']:.2f}")
-    print(f"RMSE: {best_fit['RMSE']:.4f} fm")
-
-    print("\nWorst Fit Parameters:")
-    print(f"α: {worst_fit['alpha']:.2f}")
-    print(f"α₁: {worst_fit['alpha1']:.2f}")
-    print(f"α₃: {worst_fit['alpha3']:.2f}")
-    print(f"α₄: {worst_fit['alpha4']:.2f}")
-    print(f"RMSE: {worst_fit['RMSE']:.4f} fm")
+    print("\nSummary statistics saved to analysis_summary.txt")
 
 
 if __name__ == '__main__':
