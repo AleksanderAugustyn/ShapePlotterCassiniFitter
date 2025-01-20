@@ -689,12 +689,12 @@ class CassiniShapePlotter:
                 f"Analytical volume: {volume_analytical:.4f} fm³\n"
                 f"Z_bar center of mass: {z_cm_bar:.4f} fm\n"
                 f"Z center of mass: {z_cm:.2f} fm\n"
-                f"Max X length: {total_length:.4f} fm\n"
-                f"Max Y length: {total_width:.4f} fm\n"
+                f"Max X length: {total_length:.3f} fm\n"
+                f"Max Y length: {total_width:.3f} fm\n"
                 f"Beta parameters:\n" +
-                ' '.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters[:4])]) + '\n' +
-                ' '.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters[4:8], 4)]) + '\n' +
-                ' '.join([f"β{i + 1}: {val:.4f}" for i, val in enumerate(beta_shape.beta_parameters[8:], 8)]) +
+                ' '.join([f"β{i + 1}: {val:.3f}" for i, val in enumerate(beta_shape.beta_parameters[:4])]) + '\n' +
+                ' '.join([f"β{i + 1}: {val:.3f}" for i, val in enumerate(beta_shape.beta_parameters[4:8], 4)]) + '\n' +
+                ' '.join([f"β{i + 1}: {val:.3f}" for i, val in enumerate(beta_shape.beta_parameters[8:], 8)]) +
                 f"\nRMS error: {rms_error['RMSE']:.4f} fm"
                 f"\nMAE: {rms_error['MAE']:.4f} fm"
                 f"\nMAPE: {rms_error['MAPE']:.4f}%"
