@@ -113,10 +113,10 @@ def analyze_shape_parameters(
 def main():
     """Main function to run the analysis and save results."""
     # Define parameter ranges
-    alpha_range = np.arange(0.0, 0.95 + 0.01, 0.025)
-    alpha1_range = np.arange(-0.25, 0.25 + 0.01, 0.025)
-    alpha3_range = np.arange(-0.25, 0.25 + 0.01, 0.025)
-    alpha4_range = np.arange(-0.25, 0.25 + 0.01, 0.025)
+    alpha_range = np.arange(0.0, 0.951, 0.025)
+    alpha1_range = np.arange(-0.25, 0.251, 0.25)
+    alpha3_range = np.arange(-0.25, 0.251, 0.25)
+    alpha4_range = np.arange(-0.25, 0.251, 0.25)
 
     # Print the number of combinations
     total_combinations = len(alpha_range) * len(alpha1_range) * len(alpha3_range) * len(alpha4_range)
@@ -131,8 +131,8 @@ def main():
     )
 
     # Save results to CSV
-    output_filename = 'nuclear_shape_analysis.csv'
-    results_df.to_csv(output_filename, index=False)
+    output_filename = 'nuclear_shape_analysis.txt'
+    results_df.to_csv(output_filename, sep=' ', float_format='%.3f', header=False, index=False)
     print(f"\nResults saved to {output_filename}")
 
     # Print summary statistics
