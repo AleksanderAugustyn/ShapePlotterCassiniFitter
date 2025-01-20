@@ -110,8 +110,13 @@ def analyze_shape_parameters(
     return df
 
 
-def main():
-    """Main function to run the analysis and save results."""
+def main(protons: int = 92, neutrons: int = 144):
+    """Main function to run the analysis and save results.
+    
+    Args:
+        protons: Number of protons (default: 92 for Uranium)
+        neutrons: Number of neutrons (default: 144)
+    """
     # Define parameter ranges
     alpha_range = np.arange(0.0, 0.951, 0.025)
     alpha1_range = np.arange(-0.25, 0.251, 0.25)
@@ -124,6 +129,8 @@ def main():
 
     # Run analysis
     results_df = analyze_shape_parameters(
+        protons=protons,
+        neutrons=neutrons,
         alpha_range=alpha_range,
         alpha1_range=alpha1_range,
         alpha3_range=alpha3_range,
