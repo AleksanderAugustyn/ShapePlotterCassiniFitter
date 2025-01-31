@@ -678,14 +678,14 @@ class CassiniShapePlotter:
 
         # Update information display
         info_text = (
-                f"Sphere volume: {sphere_volume:.4f} fm³\n"
-                f"Shape volume (before scaling): {volume_pre_scale:.4f} fm³\n"
-                f"Volume fixing factor: {volume_fixing_factor:.4f}\n"
-                f"Radius scaling factor: {radius_scaling_factor:.4f}\n"
+                f"Sphere volume: {sphere_volume:.3f} fm³\n"
+                f"Shape volume (before scaling): {volume_pre_scale:.3f} fm³\n"
+                f"Volume fixing factor: {volume_fixing_factor:.3f}\n"
+                f"Radius scaling factor: {radius_scaling_factor:.3f}\n"
                 f"c_male: {c_male:.4f}\n"
-                f"Shape volume (after scaling): {volume_post_scale:.4f} fm³\n"
-                f"Volume difference: {abs(sphere_volume - volume_post_scale):.4f} fm³\n"
-                f"Beta volume: {beta_volume:.4f} fm³\n"
+                f"Shape volume (after scaling): {volume_post_scale:.3f} fm³\n"
+                f"Volume difference: {abs(sphere_volume - volume_post_scale):.3f} fm³\n"
+                f"Beta volume: {beta_volume:.3f} fm³\n"
                 f"Analytical volume: {volume_analytical:.4f} fm³\n"
                 f"Z_bar center of mass: {z_cm_bar:.4f} fm\n"
                 f"Z center of mass: {z_cm:.2f} fm\n"
@@ -695,10 +695,10 @@ class CassiniShapePlotter:
                 ' '.join([f"β{i + 1}: {val:.3f}" for i, val in enumerate(beta_shape.beta_parameters[:4])]) + '\n' +
                 ' '.join([f"β{i + 1}: {val:.3f}" for i, val in enumerate(beta_shape.beta_parameters[4:8], 4)]) + '\n' +
                 ' '.join([f"β{i + 1}: {val:.3f}" for i, val in enumerate(beta_shape.beta_parameters[8:], 8)]) +
-                f"\nRMS error: {rms_error['RMSE']:.4f} fm"
-                f"\nMAE: {rms_error['MAE']:.4f} fm"
-                f"\nMAPE: {rms_error['MAPE']:.4f}%"
-                f"\nR²: {rms_error['R²']:.4f}"
+                f"\nRMS error: {rms_error['RMSE']:.3f} fm"
+                f"\nMAE: {rms_error['MAE']:.3f} fm"
+                f"\nMAPE: {rms_error['MAPE']:.3f}%"
+                f"\nR²: {rms_error['R²']:.3f}"
         )
 
         # Update display
