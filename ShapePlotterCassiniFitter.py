@@ -591,7 +591,7 @@ class CassiniShapePlotter:
         number_of_protons = int(self.slider_z.val)
         number_of_neutrons = int(self.slider_n.val)
         params = [self.slider_alpha.val] + [s.val for s in self.sliders]
-        filename = f"cassini_shape_{number_of_protons}_{number_of_neutrons}_{'_'.join(f'{p:.2f}' for p in params)}.png"
+        filename = f"cassini_shape_{number_of_protons}_{number_of_neutrons}_{'_'.join(f'{p:.3f}' for p in params)}.png"
         self.fig.savefig(filename, dpi=600)
         print(f"Plot saved as {filename}")
 
